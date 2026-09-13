@@ -72,4 +72,6 @@ issue-prefix: "hl7-poc"
 # on, the post-checkout/post-merge hooks replay a stale committed issues.jsonl back
 # into Dolt after any pull and silently revert recent closes. Never flip this.
 import:
-  auto: false
+    auto: false
+sync:
+    remote: "git+ssh://git@github.com/bildzeitung/hl7-poc.git"
