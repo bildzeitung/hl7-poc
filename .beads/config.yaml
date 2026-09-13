@@ -64,3 +64,12 @@
 # Secret keys (stored in this file but prefer env vars to avoid git exposure):
 # - linear.api_key  → use LINEAR_API_KEY env var instead
 # - github.token    → use GITHUB_TOKEN env var instead
+
+# ---- added by the harness installer ----
+# Read by scripts/harness-doctor.sh; must match the prefix bd init was given.
+issue-prefix: "hl7-poc"
+# HARD INVARIANT (docs/architecture.md, "Tracker sync discipline"). With auto-import
+# on, the post-checkout/post-merge hooks replay a stale committed issues.jsonl back
+# into Dolt after any pull and silently revert recent closes. Never flip this.
+import:
+  auto: false
