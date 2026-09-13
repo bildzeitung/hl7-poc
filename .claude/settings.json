@@ -1,0 +1,113 @@
+{
+  "autoMode": {
+    "allow": [
+      "$defaults",
+      "Editing this repo's own agent/skill instruction docs — .claude/agents/*.md and .claude/skills/**/*.md (including at a worktree path such as .claude/worktrees/**/.claude/agents/**) — IS permitted when that edit is the assigned ticket's implementation. This repo's producer workflow legitimately maintains its own agent and skill instruction files as tracked tickets. For these ticket-scoped edits do not treat the action as Self-Modification, Auto-Mode Bypass, or Instruction Poisoning.",
+      "Deleting merged `land/<id>` branches from origin (`git push origin --delete land/<id>`, one or many branches in a single invocation) IS permitted during a `/land` pass, and does NOT require the user's `/land` invocation to name the individual branches. This is the branch garbage-collection step mandated by .claude/skills/land/SKILL.md Section 4: the lander deletes a `land/<id>` branch only AFTER it has been merged --no-ff into the default branch, the combined re-gate has passed, the default branch has been pushed, and the ticket has been closed. Every commit on such a branch is therefore already reachable from origin, so the deletion drops a stale ref and destroys no work. Do not treat this as Git Destructive. This permission covers ONLY branches under the `land/` prefix; it does NOT extend to the default branch, any other remote branch namespace, or to force-pushes."
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "hooks": [
+          {
+            "command": "if ! command -v jq >/dev/null 2>&1; then printf '%s' '{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"jq is a required prerequisite (docs/onboarding.md) and is missing on this machine, so the bd blocks: inversion guard cannot evaluate this Bash call -- denying it rather than letting the guard silently fall through unchecked (docs/decisions.md). Install jq from a shell OUTSIDE Claude Code (apt-get install jq / brew install jq / choco install jq), then retry -- while jq is missing this guard denies EVERY Bash call, including the install command itself, so it cannot be fixed from in here. If you are an agent, surface this to the human and stop; do not retry the install through Bash.\"}}'; exit 0; fi; CMD=$(jq -r '.tool_input.command // empty'); ROOT=\"${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel 2>/dev/null)}\"; SCRIPT=\"$ROOT/scripts/bd-deps-blocks-guard.sh\"; [ -n \"$ROOT\" ] && [ -x \"$SCRIPT\" ] && bash \"$SCRIPT\" \"$CMD\"; exit 0",
+            "type": "command"
+          },
+          {
+            "command": "if ! command -v jq >/dev/null 2>&1; then printf '%s' '{\"hookSpecificOutput\": {\"hookEventName\": \"PreToolUse\", \"permissionDecision\": \"deny\", \"permissionDecisionReason\": \"jq is a required prerequisite (docs/onboarding.md) and is missing on this machine, so the external-tracker write guard cannot evaluate this Bash call -- denying it rather than letting the guard silently fall through unchecked (docs/decisions.md). Install jq from a shell OUTSIDE Claude Code (apt-get install jq / brew install jq / choco install jq), then retry -- while jq is missing this guard denies EVERY Bash call, including the install command itself, so it cannot be fixed from in here. If you are an agent, surface this to the human and stop; do not retry the install through Bash.\"}}'; exit 0; fi; CMD=$(jq -r '.tool_input.command // empty'); ROOT=\"${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel 2>/dev/null)}\"; SCRIPT=\"$ROOT/scripts/gh-write-guard.sh\"; if [ -z \"$ROOT\" ] || [ ! -x \"$SCRIPT\" ]; then case \"$CMD\" in *gh*) printf '%s' '{\"hookSpecificOutput\": {\"hookEventName\": \"PreToolUse\", \"permissionDecision\": \"deny\", \"permissionDecisionReason\": \"/the external-tracker write guard could not resolve scripts/gh-write-guard.sh (missing, not executable, or no git repository root) -- denying this Bash call rather than silently falling through unchecked, since gh is authed as the user and a false ALLOW here is unrecoverable. Surface this to a human; do not retry. (Only commands whose text contains the two letters g-h are denied on this path: a missing guard script is reachable from ordinary git state -- an older checkout, a partial revert -- and bricking EVERY Bash call there would be a far larger blast radius than the risk surface, which by construction always spells out the gh binary name.)\"}}';; esac; exit 0; fi; bash \"$SCRIPT\" \"$CMD\"; exit 0",
+            "type": "command"
+          },
+          {
+            "command": "if ! command -v jq >/dev/null 2>&1; then printf '%s' '{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"jq is a required prerequisite (docs/onboarding.md) and is missing on this machine, so the fabricated-SHA guard cannot evaluate this Bash call -- denying it rather than letting the guard silently fall through unchecked (docs/decisions.md). Install jq from a shell OUTSIDE Claude Code (apt-get install jq / brew install jq / choco install jq), then retry -- while jq is missing this guard denies EVERY Bash call, including the install command itself, so it cannot be fixed from in here. If you are an agent, surface this to the human and stop; do not retry the install through Bash.\"}}'; exit 0; fi; CMD=$(jq -r '.tool_input.command // empty'); ROOT=\"${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel 2>/dev/null)}\"; SCRIPT=\"$ROOT/scripts/sha-fabrication-guard.sh\"; [ -n \"$ROOT\" ] && [ -x \"$SCRIPT\" ] && bash \"$SCRIPT\" \"$CMD\"; exit 0",
+            "type": "command"
+          }
+        ],
+        "matcher": "Bash"
+      },
+      {
+        "hooks": [
+          {
+            "command": "ROOT=\"${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel 2>/dev/null)}\"; SCRIPT=\"$ROOT/scripts/default-branch-write-guard.sh\"; [ -n \"$ROOT\" ] && [ -x \"$SCRIPT\" ] && bash \"$SCRIPT\"; exit 0",
+            "type": "command"
+          }
+        ],
+        "matcher": "Edit|Write"
+      }
+    ],
+    "PreCompact": [
+      {
+        "hooks": [
+          {
+            "command": "bd prime",
+            "type": "command"
+          }
+        ],
+        "matcher": ""
+      }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "command": "bd prime --hook-json",
+            "type": "command"
+          }
+        ],
+        "matcher": ""
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "command": "root=\"${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel 2>/dev/null)}\"; [ -n \"$root\" ] && bash \"$root/scripts/discard-beads-passive-export-churn.sh\" \"$root\"; true",
+            "statusMessage": "Discarding passive bd export churn",
+            "type": "command"
+          }
+        ],
+        "matcher": ""
+      }
+    ]
+  },
+  "permissions": {
+    "allow": [
+      "WebSearch",
+      "WebFetch",
+      "Agent(*)",
+      "Read(docs/**)",
+      "Edit(docs/**)",
+      "Read(scripts/**)",
+      "Read(.claude/**)",
+      "Edit(.claude/worktrees/**)",
+      "Bash(git *)",
+      "Bash(bash -c *)",
+      "Bash(python3 *)",
+      "Bash(uv *)",
+      "Bash(pytest *)",
+      "Bash(nox *)",
+      "Bash(ruff *)",
+      "Bash(docker *)",
+      "Bash(ls *)",
+      "Bash(cat *)",
+      "Bash(grep *)",
+      "Bash(find *)",
+      "Bash(mkdir *)",
+      "Bash(cp *)",
+      "Bash(mv *)",
+      "Bash(rm *)",
+      "Bash(chmod *)",
+      "Bash(./scripts/*)",
+      "Bash(scripts/*)",
+      "Bash(bd *)"
+    ]
+  },
+  "spinnerTipsEnabled": false,
+  "statusLine": {
+    "command": "in=$(cat); d=$(printf '%s' \"$in\" | jq -r '.workspace.project_dir // .cwd // empty'); printf '%s' \"$in\" | bash \"$d/.claude/statusline.sh\"",
+    "type": "command"
+  },
+  "worktree": {
+    "baseRef": "fresh"
+  }
+}

@@ -1,0 +1,28 @@
+# Agent harness — these entries are load-bearing, not hygiene.
+#
+# /land's worktree GC reclaims a finished agent worktree only when it reads CLEAN.
+# A finished worktree is full of untracked build junk, so it reads clean ONLY because
+# these are ignored. Un-ignore one and every worktree reads dirty, the sweep reclaims
+# nothing, and worktrees accumulate without bound with no alarm.
+.venv/
+venv/
+.nox/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+
+# Agent worktrees live here. They are real git worktrees, not tracked content.
+.claude/worktrees/
+
+# Machine-local settings and consent rules — never committed.
+.claude/settings.local.json
+
+# Per-machine tracker database. The wire is refs/dolt/data, not the filesystem.
+.beads/dolt/
+
+# Beads / Dolt files (added by bd init)
+.dolt/
+*.db
+.beads-credential-key
+.beads/proxieddb/
