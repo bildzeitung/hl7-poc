@@ -62,7 +62,7 @@ def decide(msg: CanonicalMessage) -> dict | None:
     return None
 
 
-def push(payload: dict, webhook_url: str) -> None:
+def push(payload: dict, webhook_url: str | None) -> None:
     body = json.dumps({**payload, "sent_at": datetime.now(UTC).isoformat()}).encode()
     if webhook_url:
         req = urllib.request.Request(
@@ -79,7 +79,7 @@ def _prop(msg, key: str) -> str:
     return val.decode() if isinstance(val, (bytes, bytearray)) else (val or "")
 
 
-async def handle(receiver, msg, webhook_url: str) -> None:
+async def handle(receiver, msg, webhook_url: str | None) -> None:
     if _prop(msg, "msgType") == "PROBE":
         await receiver.complete_message(msg)  # listener readiness probes
         return
@@ -107,7 +107,7 @@ async def pump(
     client: ServiceBusClient,
     renewer: AutoLockRenewer,
     queue: str,
-    webhook_url: str,
+    webhook_url: str | None,
     stop_event: asyncio.Event,
 ) -> None:
     while not stop_event.is_set():
@@ -151,7 +151,7 @@ async def handle_http(reader, writer) -> None:
 async def _serve(
     servicebus_connection: str,
     servicebus_queue: str,
-    webhook_url: str,
+    webhook_url: str | None,
     http_port: int,
 ) -> None:
     stop_event = asyncio.Event()
@@ -162,28 +162,29 @@ async def _serve(
     http_server = await asyncio.start_server(handle_http, "0.0.0.0", http_port)
     print(f"liveness on :{http_port}")
 
-    async with ServiceBusClient.from_connection_string(servicebus_connection) as client:
-        renewer = AutoLockRenewer()
-        pump_task = asyncio.create_task(
-            pump(client, renewer, servicebus_queue, webhook_url, stop_event)
-        )
-        stop_wait_task = asyncio.create_task(stop_event.wait())
-        await asyncio.wait(
-            {pump_task, stop_wait_task}, return_when=asyncio.FIRST_COMPLETED
-        )
-        if pump_task.done() and not stop_event.is_set():
-            # pump ended on its own -- an unhandled exception, not a shutdown
-            # signal. Clean up and re-raise so the process exits non-zero
-            # instead of leaving /live reporting healthy over a dead pump.
-            stop_wait_task.cancel()
-            await renewer.close()
-            http_server.close()
-            pump_task.result()
-        stop_event.set()  # finish current session, take no new ones
-        stop_wait_task.cancel()
-        await asyncio.wait_for(pump_task, timeout=30)
-        await renewer.close()
-    http_server.close()
+    try:
+        async with ServiceBusClient.from_connection_string(
+            servicebus_connection
+        ) as client:
+            renewer = AutoLockRenewer()
+            pump_task = asyncio.create_task(
+                pump(client, renewer, servicebus_queue, webhook_url, stop_event)
+            )
+            stop_wait_task = asyncio.create_task(stop_event.wait())
+            try:
+                await asyncio.wait(
+                    {pump_task, stop_wait_task}, return_when=asyncio.FIRST_COMPLETED
+                )
+                stop_event.set()  # finish current session, take no new ones
+                # The pump only returns on its own through an unhandled
+                # exception; awaiting it re-raises so the process exits
+                # non-zero instead of leaving /live healthy over a dead pump.
+                await asyncio.wait_for(pump_task, timeout=30)
+            finally:
+                stop_wait_task.cancel()
+                await renewer.close()
+    finally:
+        http_server.close()
 
 
 @app.command()
@@ -197,6 +198,4 @@ def main(
 ) -> None:
     """Start the HL7 worker."""
     logging.basicConfig(level=logging.INFO)
-    asyncio.run(
-        _serve(servicebus_connection, servicebus_queue, webhook_url or "", http_port)
-    )
+    asyncio.run(_serve(servicebus_connection, servicebus_queue, webhook_url, http_port))

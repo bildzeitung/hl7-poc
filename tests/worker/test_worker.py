@@ -1,5 +1,8 @@
+from __future__ import annotations
+
 import asyncio
 import json
+from typing import Self
 
 import pytest
 from azure.servicebus.exceptions import ServiceBusError
@@ -12,7 +15,7 @@ from hl7poc.model import (
     Patient,
     Result,
 )
-from hl7poc.worker import decide, handle, push
+from hl7poc.worker import _serve, decide, handle, push
 
 
 def _model(
@@ -194,3 +197,54 @@ def test_handle_service_bus_error_on_complete_propagates() -> None:
 
     with pytest.raises(ServiceBusError):
         asyncio.run(handle(receiver, msg, ""))
+
+
+# ---- _serve lifecycle ---------------------------------------------------------
+
+
+class _FakeClient:
+    async def __aenter__(self) -> Self:
+        return self
+
+    async def __aexit__(self, *exc) -> bool:
+        return False
+
+
+class _FakeRenewer:
+    def __init__(self) -> None:
+        self.closed = False
+
+    async def close(self) -> None:
+        self.closed = True
+
+
+def test_serve_reraises_a_dead_pump_and_closes_its_resources(monkeypatch) -> None:
+    # A pump that dies on an unhandled exception must take the process with it,
+    # not leave /live answering 200 over a worker that consumes nothing.
+    renewer = _FakeRenewer()
+    servers: list = []
+    real_start_server = asyncio.start_server
+
+    async def _boom(*args, **kwargs) -> None:
+        raise RuntimeError("pump died")
+
+    async def _tracking_start_server(*args, **kwargs):
+        server = await real_start_server(*args, **kwargs)
+        servers.append(server)
+        return server
+
+    monkeypatch.setattr("hl7poc.worker.pump", _boom)
+    monkeypatch.setattr("hl7poc.worker.AutoLockRenewer", lambda: renewer)
+    monkeypatch.setattr(
+        "hl7poc.worker.ServiceBusClient",
+        type(
+            "_C", (), {"from_connection_string": staticmethod(lambda _: _FakeClient())}
+        ),
+    )
+    monkeypatch.setattr(asyncio, "start_server", _tracking_start_server)
+
+    with pytest.raises(RuntimeError, match="pump died"):
+        asyncio.run(_serve("conn", "hl7-events", None, 0))
+
+    assert renewer.closed
+    assert servers and not servers[0].is_serving()
