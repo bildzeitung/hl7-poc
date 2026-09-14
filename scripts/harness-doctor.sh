@@ -89,9 +89,6 @@ scripts/default-branch-write-guard.sh
 scripts/bd-deps-blocks-guard.sh
 scripts/discard-beads-passive-export-churn.sh
 scripts/beads-passive-exports.sh
-scripts/release.sh
-scripts/release-latest-tag.sh
-scripts/release-bump.sh
 scripts/drop-from-accepted.sh
 scripts/land-heartbeat.sh
 scripts/land-merge-batch.sh
@@ -115,7 +112,7 @@ echo "agents and skills"
 for a in coding code-reviewer land-review; do
   if [ -f ".claude/agents/$a.md" ]; then ok ".claude/agents/$a.md"; else bad ".claude/agents/$a.md missing"; fi
 done
-for s in code land challenge epic-audit sweep release; do
+for s in code land challenge epic-audit sweep; do
   if [ -f ".claude/skills/$s/SKILL.md" ]; then ok ".claude/skills/$s/SKILL.md"; else bad ".claude/skills/$s/SKILL.md missing"; fi
 done
 
