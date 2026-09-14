@@ -321,7 +321,7 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "azure-servicebus", specifier = ">=7.12" },
-    { name = "hl7", specifier = ">=0.4" },
+    { name = "hl7", specifier = ">=0.4.5" },
     { name = "hl7poc-core", editable = "packages/core" },
     { name = "typer", specifier = ">=0.12" },
 ]
