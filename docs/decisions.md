@@ -80,6 +80,25 @@ decision above, the harness's leftover release tooling (`scripts/release.sh` and
 tags it would cut. `uv.lock` / `lock_currency` machinery is unaffected — that is dependency pinning,
 not package versioning, and stays.
 
+**2026-09-14 — Listener `/ready` does not gate on Service Bus; no probe message on `hl7-events`
+(`hl7-poc-kps`).** The listener's design is spool-first: it spools and ACKs an MLLP frame before
+forwarding, precisely so it keeps accepting traffic while Service Bus is down. Gating `/ready` on
+the bus contradicts that — k8s would stop routing to the listener and the sending system would back
+up on its own side instead of in the spool. So `/ready` returns 200 iff MLLP is listening, the spool
+directory is writable, and the process is not shutting down; Service Bus reachability is not a
+readiness input. `sb_healthy` is still reported in `/ready`'s JSON body and still updated by real
+send outcomes and the spool drain — it only needs to be eventually accurate, so it needs no probe.
+The listener's periodic `_startup_probe` (a fake `ServiceBusMessage` with body `"probe"`,
+`session_id "_probe"`, `msgType=PROBE`) and the worker's matching `msgType=PROBE` completion branch
+are removed. `hl7-events` carries `CanonicalMessage` JSON only, per `docs/canonical-model.md` — no
+other message shape is ever put on it.
+
+**2026-09-14 — One shared probe HTTP server in `hl7poc.probe` (`hl7-poc-kps`).** `handle_http` (the
+`/live`-always, `/ready`-when-given-a-callable request handler) and the probe read timeout constant
+live once, in `packages/core/src/hl7poc/probe.py`, parameterised by an optional readiness callable
+so the worker (no `/ready`) and the listener (`/ready` per the decision above) share one
+implementation instead of two independently-drifting copies.
+
 ## Deferred, not forgotten
 
 Decisions this project has deliberately not made yet. Each stays open until a ticket revisits it.

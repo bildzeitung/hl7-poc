@@ -15,8 +15,8 @@ from __future__ import annotations
 
 import asyncio
 import functools
-import json
 import logging
+import os
 import signal
 import sys
 import time
@@ -31,6 +31,7 @@ from azure.servicebus import ServiceBusMessage
 from azure.servicebus.aio import ServiceBusClient
 from hl7poc.listener.transform import TransformError, parse_header, parse_message
 from hl7poc.model import CanonicalMessage, MessageHeader
+from hl7poc.probe import handle_http
 
 app = typer.Typer(add_completion=False)
 logger = logging.getLogger(__name__)
@@ -43,12 +44,16 @@ ForwardFn = Callable[[CanonicalMessage, Path], Awaitable[None]]
 class ListenerState:
     """Readiness state shared between the MLLP/probe handlers and the retry loop.
 
-    /ready requires all three: MLLP bound, Service Bus reachable, not
-    shutting down -- a plain instance attribute set is enough since every
-    reader/writer runs on the same event loop thread.
+    /ready is spool-first: it requires MLLP bound, the spool dir writable, and
+    not shutting down. Service Bus reachability is NOT a readiness input (see
+    docs/decisions.md) -- sb_healthy is carried here only to report in
+    /ready's JSON body, updated by real send outcomes. A plain instance
+    attribute set is enough since every reader/writer runs on the same event
+    loop thread.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, spool_dir: Path) -> None:
+        self.spool_dir = spool_dir
         self.mllp_listening = False
         self.sb_healthy = False
         self.shutting_down = False
@@ -58,7 +63,18 @@ class ListenerState:
             "mllp_listening": self.mllp_listening,
             "sb_healthy": self.sb_healthy,
             "shutting_down": self.shutting_down,
+            "spool_writable": self._spool_writable(),
         }
+
+    def _spool_writable(self) -> bool:
+        return os.access(self.spool_dir, os.W_OK)
+
+    def ready(self) -> tuple[bool, dict]:
+        fields = self.as_dict()
+        is_ready = (
+            self.mllp_listening and fields["spool_writable"] and not self.shutting_down
+        )
+        return is_ready, fields
 
 
 # ---- MLLP framing (pure, unit-testable without asyncio) -------------------
@@ -222,40 +238,6 @@ async def handle_mllp(
         writer.close()
 
 
-# ---- probe endpoints (stdlib-free-of-frameworks on purpose) --------------
-
-
-async def handle_http(
-    reader: asyncio.StreamReader,
-    writer: asyncio.StreamWriter,
-    *,
-    state: ListenerState,
-) -> None:
-    try:
-        request_line = await asyncio.wait_for(reader.readline(), timeout=3)
-        path = request_line.split(b" ")[1].decode() if b" " in request_line else "/"
-        if path == "/live":
-            status, body = "200 OK", b"ok"
-        elif path == "/ready":
-            ready = (
-                state.mllp_listening and state.sb_healthy and not state.shutting_down
-            )
-            status = "200 OK" if ready else "503 Service Unavailable"
-            body = json.dumps(state.as_dict()).encode()
-        else:
-            status, body = "404 Not Found", b""
-        writer.write(
-            f"HTTP/1.1 {status}\r\nContent-Length: {len(body)}\r\n"
-            f"Connection: close\r\n\r\n".encode()
-            + body
-        )
-        await writer.drain()
-    except (TimeoutError, IndexError, ConnectionResetError):
-        pass
-    finally:
-        writer.close()
-
-
 # ---- spool drain (retry loop) ---------------------------------------------
 
 
@@ -310,34 +292,14 @@ async def _forward(
         )
 
 
-async def _startup_probe(sender, send_lock: asyncio.Lock, state: ListenerState) -> None:
-    try:
-        async with send_lock:
-            await sender.send_messages(
-                ServiceBusMessage(
-                    body="probe",
-                    session_id="_probe",
-                    application_properties={"msgType": "PROBE"},
-                )
-            )
-        state.sb_healthy = True
-        logger.info("service bus reachable")
-    except Exception as err:  # noqa: BLE001
-        logger.warning("service bus not ready yet: %s", err)
-
-
 async def retry_loop(
     state: ListenerState,
-    sender,
-    send_lock: asyncio.Lock,
     forward: ForwardFn,
     spool_dir: Path,
     rejected_dir: Path,
 ) -> None:
     while not state.shutting_down:
         try:
-            if not state.sb_healthy:
-                await _startup_probe(sender, send_lock, state)
             await drain_spool(spool_dir, rejected_dir, forward)
         except Exception:
             logger.exception("retry loop error")
@@ -358,7 +320,7 @@ async def serve(
     spool_dir.mkdir(parents=True, exist_ok=True)
     rejected_dir = spool_dir / "rejected"
 
-    state = ListenerState()
+    state = ListenerState(spool_dir)
     tasks: set[asyncio.Task] = set()
 
     async with ServiceBusClient.from_connection_string(
@@ -385,13 +347,11 @@ async def serve(
         logger.info("MLLP listening on :%d", mllp_port)
 
         http_server = await asyncio.start_server(
-            functools.partial(handle_http, state=state), "0.0.0.0", http_port
+            functools.partial(handle_http, ready=state.ready), "0.0.0.0", http_port
         )
         logger.info("probes on :%d", http_port)
 
-        retry = asyncio.create_task(
-            retry_loop(state, sender, send_lock, forward, spool_dir, rejected_dir)
-        )
+        retry = asyncio.create_task(retry_loop(state, forward, spool_dir, rejected_dir))
 
         stop = asyncio.Event()
         loop = asyncio.get_running_loop()
