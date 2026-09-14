@@ -58,7 +58,7 @@ modules are independent, so deleting a file is safe:
 | Drop if you… | Modules | Lines |
 |---|---|---|
 | don't use epics | `test_epic_*` (3) | 649 |
-| don't run `/sweep` | `test_sweep_*` (6) | 1,432 |
+| don't run `/sweep` | `test_sweep_*` (5) | 1,164 |
 | never fan out `/code` | `test_code_concurrency_cap` | 233 |
 
 **Keep regardless**, whatever else you drop — these gate code that deletes worktrees, resets
