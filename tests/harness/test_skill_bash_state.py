@@ -91,8 +91,8 @@ gate, proj-x495).
 proj-x495 explicitly permitted either scoping this gate to `land/SKILL.md` only and
 widening later, or shipping repo-wide with an allowlist. This gate ships **repo-wide**
 (`.claude/skills/*/SKILL.md`) with an allowlist, because the bug class is not
-land-local (per the ticket's own title) and `/sweep` and `/release` already carried
-real, confirmed instances that a land-only gate would leave silently uncovered.
+land-local (per the ticket's own title) and `/sweep` already carried real,
+confirmed instances that a land-only gate would leave silently uncovered.
 
 `proj-lv04` widened the same gate to `.claude/agents/*.md` -- markdown instruction
 files whose fenced bash an agent executes exactly the same way, block by block, under
@@ -243,19 +243,10 @@ _KNOWN_ENV_VARS: dict[str, str] = {
 # real, unfiltered violation today; `test_every_allowlist_entry_is_provably_checked_by_
 # sabotage` proves that pin is not vacuous.
 ALLOWLIST: dict[tuple[str, str], str] = {
-    ("skills/release/SKILL.md", "PROPOSED"): (
-        "The human-confirmed version string from Section 3's confirmation dialogue. "
-        "Never computed by any bash in this file -- Section 2's scripts/release-bump.sh "
-        "only classifies breaking/feat/fix/none, the actual X.Y.Z arithmetic (or an "
-        "explicit override) is applied by the agent's own reasoning and confirmed in "
-        "conversation, not in a shell. There is nothing upstream to re-derive or "
-        "persist from; the agent supplies the literal confirmed version at Section 4's "
-        "invocation site, the same way it fills in a `<...>` template placeholder."
-    ),
     ("skills/land/SKILL.md", "ACCEPTED"): (
-        "Section 3a's ordered, land-review-verdict-derived accepted set -- the same "
-        "shape as release/SKILL.md's $PROPOSED above: computed by the agent's own "
-        "reasoning across Sections 2c (dispatched land-review verdicts) and 3a "
+        "Section 3a's ordered, land-review-verdict-derived accepted set -- "
+        "computed by the agent's own reasoning across Sections 2c (dispatched "
+        "land-review verdicts) and 3a "
         "(stacked-branch ordering), never by any single deterministic bash command in "
         "the file. land/SKILL.md states the checkable property itself, right next to "
         "the persist block: the set 'encodes land-review's per-branch judgment, which "
@@ -597,7 +588,7 @@ def test_export_and_local_prefixed_assignment() -> None:
 
 def test_non_bash_fence_is_never_scanned() -> None:
     """A plain (unlabeled) fence or a ```text fence is prose/template, never
-    executed -- e.g. release/SKILL.md's confirmation template uses `<PROPOSED>`-style
+    executed -- e.g. a confirmation template using `<PLACEHOLDER>`-style
     placeholders inside a plain fence, which must never be parsed as bash at all."""
     markdown = '```\necho "$UNASSIGNED"\n```\n'
     assert _bash_blocks(markdown) == []

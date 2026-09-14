@@ -44,7 +44,7 @@ nothing.
 
 ## Do I need all of them?
 
-The suite is 37 modules / 988 tests / under a minute with 8 workers — and, through the gate
+The suite is 35 modules / 934 tests / under a minute with 8 workers — and, through the gate
 script, it costs an ordinary project branch nothing. The test *count* is mostly parametrisation —
 `test_gh_write_guard` alone contributes 335 cases, one per `gh` command form, in about ten
 seconds. Count is not cost.
@@ -57,7 +57,6 @@ modules are independent, so deleting a file is safe:
 
 | Drop if you… | Modules | Lines |
 |---|---|---|
-| don't use `/release` | `test_release_bump`, `test_release_latest_tag` | 749 |
 | don't use epics | `test_epic_*` (3) | 649 |
 | don't run `/sweep` | `test_sweep_*` (6) | 1,432 |
 | never fan out `/code` | `test_code_concurrency_cap` | 231 |

@@ -76,10 +76,9 @@
 #
 # Not sourced from `scripts/gate-lib.sh`: that helper's "GATE COULD NOT RUN"
 # banner belongs to the CONTENT-verifying gates (validate-mermaid.sh,
-# merge-precheck.sh, land-merge-one.sh, release-bump.sh, release-latest-tag.sh),
-# where exit 2
-# means "could not judge the content." This is a precondition GUARD, and it
-# matches its true siblings -- isolation-guard.sh and
+# merge-precheck.sh, land-merge-one.sh), where exit 2 means "could not judge
+# the content." This is a precondition GUARD, and it matches its true
+# siblings -- isolation-guard.sh and
 # recycled-worktree-guard.sh, neither of which sources gate-lib.sh either.
 #
 # One of harness's 0/1/2 precondition guards. The shared contract -- exit

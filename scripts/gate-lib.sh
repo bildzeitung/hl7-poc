@@ -16,7 +16,7 @@
 # literal copies, free to drift --
 # and had already started to: validate-mermaid.sh's copy printed a two-line
 # domain advisory ("not a mermaid syntax error ...") that merge-precheck.sh's
-# ("not a branch conflict ...") and release-bump.sh's (no advisory at all)
+# ("not a branch conflict ...") and a third copy's (no advisory at all)
 # each stated differently, so the "exit 2 is the machine, never the content"
 # contract was spelled out three slightly different ways. Same "reaches three
 # copies, extract" precedent as scripts/epic-children-closed.sh and
@@ -73,17 +73,16 @@
 # unaffected). Call it only from the top-level script process, never from
 # inside a command substitution: a subshell's `exit` only ends the subshell,
 # not the calling script -- every existing call site already handles this
-# correctly (e.g. release-bump.sh's `read_log { ...; } ... || exit $?`
-# propagation out of its own command-substitution subshell).
+# correctly. A consumer that must call it from inside a command substitution
+# has to propagate the status out explicitly (`... || exit $?`).
 #
 # WHY THIS EXIT-2 CONVENTION BINDS scripts/*.sh AND NOT AGENT-EXECUTED SKILL
 # FENCES: the 0/1/2 split above exists so that a CALLER -- another
 # script, invoking one of these as a subprocess -- can classify the exit code
-# programmatically without parsing stderr. Several skill markdown files (e.g.
-# .claude/skills/land/SKILL.md, .claude/skills/release/SKILL.md) contain
-# fenced bash blocks that print this same "GATE COULD NOT RUN:" banner and
-# then exit 1, not 2, when they hit a machine/checkout fault instead of a
-# genuine content verdict. That is CORRECT and not a violation of the
+# programmatically without parsing stderr. A skill markdown file
+# (.claude/skills/sweep/SKILL.md) contains fenced bash blocks that print this
+# same "GATE COULD NOT RUN:" banner and then exit 1, not 2, when they hit a
+# machine/checkout fault instead of a genuine content verdict. That is CORRECT and not a violation of the
 # convention above: those fences are executed directly by an agent working
 # through the skill, one Bash-tool invocation at a time -- there is no calling
 # SCRIPT to classify the exit code, only the agent itself, which reads the
@@ -133,14 +132,14 @@
 # into GATE_ADVISORY, printed as if it were a fixed advisory trailer on every
 # GATE COULD NOT RUN exit. A consumer that wants no advisory trailer must
 # pass the literal sentinel `--no-advisory`, never nothing (see
-# release-bump.sh / release-latest-tag.sh).
+# stacked-graph.sh / drop-from-accepted.sh).
 #
 # DO NOT rely on that leak to announce a forgotten sentinel -- it only shows
 # up when the consumer happens to be holding CLI arguments at the moment it
 # sources. A consumer invoked with NO arguments (validate-mermaid.sh takes
-# none at all; release-latest-tag.sh's bare form takes none) leaves $# at 0,
-# so a bare source yields an empty GATE_ADVISORY that is silently
-# indistinguishable from a correct `--no-advisory`. What actually enforces
+# none at all) leaves $# at 0, so a bare source yields an empty
+# GATE_ADVISORY that is silently indistinguishable from a correct
+# `--no-advisory`. What actually enforces
 # this for every consumer, argv or not, is STATIC: tests/test_gate_lib.py's
 # discovered sweep asserts every consumer's source line supplies either
 # advisory strings or the sentinel -- never a bare source with zero trailing

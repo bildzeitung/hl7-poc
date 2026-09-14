@@ -37,9 +37,9 @@ model to check the anchor against, so only its file-existence is verified.
 
 SCOPE DECISION: a ``docs/`` anchor is cited from plenty of files
 that are neither under ``docs/`` nor ``.claude/`` -- a bare-text pointer like
-``docs/release.md#ci-workflow-trigger-scope-push-and-pull_request`` inside a
-``# comment`` in ``.github/workflows/*.yml`` or ``scripts/*.sh``, with no
-markdown ``[text](...)`` brackets at all. The general form was chosen over
+``docs/design.md#build-sequencing`` inside a ``# comment`` in
+``.github/workflows/*.yml`` or ``scripts/*.sh``, with no markdown
+``[text](...)`` brackets at all. The general form was chosen over
 special-casing ``.github/workflows/``: EVERY tracked file outside
 ``BARE_CITATION_EXCLUDE_DIRS`` is scanned for a bare ``docs/<path>.md#<anchor>``
 text reference (``_bare_doc_anchor_refs`` / ``_tracked_other_files`` below),
@@ -153,7 +153,7 @@ _HTML_ANCHOR_RE = re.compile(r'<a\s+(?:id|name)=["\']([^"\']+)["\']', re.IGNOREC
 # anchor to check, same as an anchor-less markdown link).
 # The `(?<![\w./-])` lookbehind makes "root-relative" mechanical: it refuses
 # any `docs/` preceded by a path character, so a URL into ANOTHER repo's docs
-# (`https://github.com/org/repo/blob/main/docs/release.md#anchor`) is never
+# (`https://github.com/org/repo/blob/main/docs/design.md#anchor`) is never
 # resolved against this tree. Without it, one upstream URL in a README turns
 # this blocking gate red on a target that was never ours (verified: it did).
 # The trailing `(?![\w-])` stops the match from swallowing a following word
