@@ -216,7 +216,7 @@ async def handle_mllp(
                 )
                 writer.write(VT + ack.encode() + FS + CR)
                 await writer.drain()
-    except (ConnectionResetError, asyncio.IncompleteReadError):
+    except ConnectionResetError, asyncio.IncompleteReadError:
         pass
     finally:
         writer.close()
@@ -250,7 +250,7 @@ async def handle_http(
             + body
         )
         await writer.drain()
-    except (TimeoutError, IndexError, ConnectionResetError):
+    except TimeoutError, IndexError, ConnectionResetError:
         pass
     finally:
         writer.close()

@@ -141,7 +141,7 @@ async def handle_http(reader, writer) -> None:
             + body
         )
         await writer.drain()
-    except (TimeoutError, ConnectionResetError):
+    except TimeoutError, ConnectionResetError:
         pass
     finally:
         writer.close()
