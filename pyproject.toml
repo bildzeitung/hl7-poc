@@ -1,7 +1,7 @@
 # This is a uv workspace root: the listener and worker are split into
 # separately installable distributions (packages/listener, packages/worker)
 # sharing packages/core, so each can be containerised without the union of
-# both services' dependencies. See docs/design.md and hl7-poc-ouc.
+# both services' dependencies.
 #
 # uv.lock is the only place exact versions live, at the workspace root; `uv
 # sync` / `uv run` build ./.venv from it. Move the lock deliberately -- `uv

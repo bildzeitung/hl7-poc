@@ -7,7 +7,6 @@ name = "hl7poc-core"
 version = "0.0.0"
 requires-python = ">=3.11"
 dependencies = []
-readme = "../../README.md"
 
 [tool.uv.build-backend]
 module-name = "hl7poc.model"

@@ -10,9 +10,8 @@ dependencies = [
   "hl7poc-core",
   "azure-servicebus>=7.12",
   "typer>=0.12",
-  "hl7",
+  "hl7>=0.4",
 ]
-readme = "../../README.md"
 
 [project.scripts]
 hl7listener = "hl7poc.listener:app"
