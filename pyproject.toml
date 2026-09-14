@@ -1,34 +1,16 @@
-# Placeholder shipped by the agent harness -- rename the project and add your
-# runtime dependencies (`uv add <pkg>`). Keep the `dev` dependency group's
-# tools: noxfile.py's gate sessions run them out of the environment `uv run`
-# selects (shellcheck-py is how `nox -s shellcheck` finds shellcheck), and
-# scripts/check_links.py and friends import typer.
+# This is a uv workspace root: the listener and worker are split into
+# separately installable distributions (packages/listener, packages/worker)
+# sharing packages/core, so each can be containerised without the union of
+# both services' dependencies. See docs/design.md and hl7-poc-ouc.
 #
-# This is a uv project: `uv.lock` is the only place exact versions live, and
-# `uv sync` / `uv run` build ./.venv from it. The harness ships no lock -- the
-# installer's `uv sync` resolves one on your machine, and it is yours to
-# commit with your first commit. Move the lock deliberately --
-# `uv add`, `uv lock --upgrade-package NAME`, or scripts/update-deps.sh -- and
-# commit it; the `lock_currency` gate (`uv lock --check`) fails on a lock that
-# no longer matches this file.
-#
-# [build-system] below uses uv_build so [project.scripts] installs editable
-# on every sync -- without a build backend uv treats the project as virtual
-# and never installs the console scripts.
+# uv.lock is the only place exact versions live, at the workspace root; `uv
+# sync` / `uv run` build ./.venv from it. Move the lock deliberately -- `uv
+# add`, `uv lock --upgrade-package NAME`, or scripts/update-deps.sh -- and
+# commit it; the `lock_currency` gate (`uv lock --check`) fails on a lock
+# that no longer matches a member's pyproject.toml.
 
-[build-system]
-requires = ["uv_build>=0.6,<0.7"]
-build-backend = "uv_build"
-
-[project]
-name = "hl7poc"
-version = "0.0.0"
-requires-python = ">=3.11"
-dependencies = [
-  "azure-servicebus>=7.12",
-  "typer>=0.12",
-]
-readme = "README.md"
+[tool.uv.workspace]
+members = ["packages/*"]
 
 [dependency-groups]
 dev = [
@@ -46,7 +28,3 @@ dev = [
 [tool.ruff]
 line-length = 88
 target-version = "py311"
-
-[project.scripts]
-hl7listener = "hl7poc.listener:app"
-hl7worker = "hl7poc.worker:app"

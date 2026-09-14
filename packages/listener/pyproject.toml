@@ -1,0 +1,25 @@
+[build-system]
+requires = ["uv_build>=0.8,<0.12"]
+build-backend = "uv_build"
+
+[project]
+name = "hl7poc-listener"
+version = "0.0.0"
+requires-python = ">=3.11"
+dependencies = [
+  "hl7poc-core",
+  "azure-servicebus>=7.12",
+  "typer>=0.12",
+  "hl7",
+]
+readme = "../../README.md"
+
+[project.scripts]
+hl7listener = "hl7poc.listener:app"
+
+[tool.uv.sources]
+hl7poc-core = { workspace = true }
+
+[tool.uv.build-backend]
+module-name = "hl7poc.listener"
+namespace = true
