@@ -61,15 +61,6 @@ warn-then-unwrap-then-hard-fail sequencing.
 not interact with this gate at all: this gate only ever reads Python source
 under the roots ``_scan_roots`` derives, never ``docs/`` prose.
 
-SCAN ROOTS: this repo is mid-migration from a flat ``src/`` + ``tests/``
-layout to a uv workspace (``packages/*/src`` + ``packages/*/tests``, one
-pair per distribution). Hardcoding either form makes the gate degrade to a
-silent no-op the moment the checkout is on the other one -- exactly the
-failure this gate exists to prevent, just one layer up. ``_scan_roots``
-checks for both and unions whichever exist, so the gate keeps working
-whichever layout is on disk, including partway through a migration where
-some packages have moved and others haven't.
-
 Usage::
 
     python scripts/check_docstring_refs.py            # scan this checkout's derived roots
@@ -131,22 +122,30 @@ class RefFinding:
         return f"{self.path}:{self.line_no}: {self.reason} -> {self.ref}"
 
 
-def _scan_roots(root: Path) -> list[str]:
-    """Source/test directories (relative to ``root``) to scan.
+_ROOT_PATTERNS = ("src", "tests", "packages/*/src", "packages/*/tests")
 
-    Unions the legacy flat layout (``src/``, ``tests/``) with the uv
-    workspace layout (``packages/*/src``, ``packages/*/tests``) the split in
-    hl7-poc-ouc introduces -- whichever of the two exist on disk. A checkout
-    can legitimately have both mid-migration (some packages moved, others
-    not), so this is a union, never an either/or choice."""
-    legacy = [d for d in ("src", "tests") if (root / d).is_dir()]
-    workspace = sorted(
+
+def _scan_roots(root: Path) -> list[str]:
+    """Source/test directories (relative to ``root``) that exist on disk.
+
+    ``_ROOT_PATTERNS`` unions the legacy flat layout (``src/``, ``tests/``)
+    with the uv workspace layout (``packages/*/src``, ``packages/*/tests``)
+    hl7-poc-ouc's split introduces. A checkout can legitimately have both
+    mid-migration (some packages moved, others not), so this is a union,
+    never an either/or choice -- pinning either form alone makes the gate a
+    silent no-op on the other, which is the failure this gate exists to
+    prevent, one layer up.
+
+    The patterns still encode two conventions: members live under
+    ``packages/``, and each keeps its sources in ``src``/``tests``.
+    Reading ``[tool.uv.workspace].members`` instead would only ever replace
+    the first, so the coupling is inherent rather than a shortcut."""
+    return sorted(
         str(path.relative_to(root))
-        for pattern in ("packages/*/src", "packages/*/tests")
+        for pattern in _ROOT_PATTERNS
         for path in root.glob(pattern)
         if path.is_dir()
     )
-    return legacy + workspace
 
 
 def _tracked_python_files(root: Path) -> list[Path]:
@@ -281,10 +280,8 @@ def main(
     # sys.path -- ``--root``'s tree must win over any ambient ``harness``,
     # and the guard has to be able to observe that it already has.
     for scan_dir in _scan_roots(target_root):
-        if Path(scan_dir).name != "src":
-            continue
         src_dir = str(target_root / scan_dir)
-        if src_dir not in sys.path:
+        if Path(scan_dir).name == "src" and src_dir not in sys.path:
             sys.path.insert(0, src_dir)
     unresolved, wrapped = check(target_root)
     # Each kind prints its own findings immediately followed by its own

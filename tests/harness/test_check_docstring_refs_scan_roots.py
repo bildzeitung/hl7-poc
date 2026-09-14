@@ -6,30 +6,29 @@ the uv workspace split (hl7-poc-ouc) this repo's code lives under
 silently matched nothing -- the gate degraded to reporting green over zero
 scanned files, the worst failure mode for a gate.
 
-These tests build throwaway git-tracked trees on disk (``_scan_roots`` reads
-git-tracked files, so an untracked tree scans as empty) covering the legacy
-layout, the workspace layout, and both at once, and assert the derived roots
--- not just that today's checkout (still legacy-only, pending hl7-poc-ouc)
-happens to work.
+These tests build throwaway trees on disk covering the legacy layout, the
+workspace layout, and both at once, and assert the derived roots -- not just
+that today's checkout (still legacy-only, pending hl7-poc-ouc) happens to
+work. The trees are git-committed because ``_tracked_python_files`` sources
+its file list from ``git ls-files``: an untracked tree scans as empty however
+``_scan_roots`` resolves it.
 """
 
 from __future__ import annotations
 
-import subprocess
 from pathlib import Path
 
+from _gitrepo import _commit_file, _git
 from conftest import REPO_ROOT, load_module_from_path
 
 SCRIPT = REPO_ROOT / "scripts" / "check_docstring_refs.py"
 
+# Assembled from pieces, never written as one literal: ``tests/`` is itself a
+# scan root, so an intact role in this file's own source is a dangling ref the
+# gate reports against its own test suite.
+_DANGLING_ROLE = ":func:" + "`harness.does_not_exist.at_all`"
+
 check_docstring_refs = load_module_from_path("check_docstring_refs", SCRIPT)
-
-
-def _git(repo: Path, *args: str) -> None:
-    result = subprocess.run(
-        ["git", *args], cwd=repo, capture_output=True, text=True, check=False
-    )
-    assert result.returncode == 0, f"git {' '.join(args)} failed: {result.stderr}"
 
 
 def _init_repo(repo: Path) -> None:
@@ -39,19 +38,20 @@ def _init_repo(repo: Path) -> None:
     _git(repo, "config", "user.name", "test")
 
 
-def _commit_file(repo: Path, rel: str, content: str = "") -> None:
-    full = repo / rel
-    full.parent.mkdir(parents=True, exist_ok=True)
-    full.write_text(content)
-    _git(repo, "add", rel)
-    _git(repo, "commit", "-q", "-m", f"add {rel}")
+def _touch(repo: Path, rel: str, content: str = "") -> None:
+    """Commit `rel` -- a thin delegation to `_gitrepo._commit_file`, not a
+    second copy of it. These trees exist only for their SHAPE, so the commit
+    message carries nothing a call site could usefully supply and the content
+    is usually empty; spelling both at every call site would bury the paths,
+    which are the only thing each test is actually asserting about."""
+    _commit_file(repo, rel, content, f"add {rel}")
 
 
 def test_legacy_layout_only(tmp_path: Path) -> None:
     repo = tmp_path / "legacy"
     _init_repo(repo)
-    _commit_file(repo, "src/pkg/mod.py")
-    _commit_file(repo, "tests/test_mod.py")
+    _touch(repo, "src/pkg/mod.py")
+    _touch(repo, "tests/test_mod.py")
 
     assert check_docstring_refs._scan_roots(repo) == ["src", "tests"]
 
@@ -62,10 +62,10 @@ def test_workspace_layout_only(tmp_path: Path) -> None:
     this is the exact case that used to silently scan zero files."""
     repo = tmp_path / "workspace"
     _init_repo(repo)
-    _commit_file(repo, "packages/core/src/hl7poc_core/mod.py")
-    _commit_file(repo, "packages/core/tests/test_mod.py")
-    _commit_file(repo, "packages/listener/src/hl7poc_listener/mod.py")
-    _commit_file(repo, "packages/listener/tests/test_mod.py")
+    _touch(repo, "packages/core/src/hl7poc_core/mod.py")
+    _touch(repo, "packages/core/tests/test_mod.py")
+    _touch(repo, "packages/listener/src/hl7poc_listener/mod.py")
+    _touch(repo, "packages/listener/tests/test_mod.py")
 
     roots = check_docstring_refs._scan_roots(repo)
 
@@ -84,10 +84,10 @@ def test_both_layouts_at_once(tmp_path: Path) -> None:
     still holding the rest. Both forms must union, not either/or."""
     repo = tmp_path / "mixed"
     _init_repo(repo)
-    _commit_file(repo, "src/legacy_pkg/mod.py")
-    _commit_file(repo, "tests/test_legacy.py")
-    _commit_file(repo, "packages/core/src/hl7poc_core/mod.py")
-    _commit_file(repo, "packages/core/tests/test_mod.py")
+    _touch(repo, "src/legacy_pkg/mod.py")
+    _touch(repo, "tests/test_legacy.py")
+    _touch(repo, "packages/core/src/hl7poc_core/mod.py")
+    _touch(repo, "packages/core/tests/test_mod.py")
 
     roots = check_docstring_refs._scan_roots(repo)
 
@@ -97,7 +97,7 @@ def test_both_layouts_at_once(tmp_path: Path) -> None:
 def test_neither_layout_present(tmp_path: Path) -> None:
     repo = tmp_path / "empty"
     _init_repo(repo)
-    _commit_file(repo, "README.md", "nothing to scan")
+    _touch(repo, "README.md", "nothing to scan")
 
     assert check_docstring_refs._scan_roots(repo) == []
 
@@ -110,18 +110,15 @@ def test_workspace_layout_files_are_actually_scanned(tmp_path: Path) -> None:
     reproduced and shown fixed."""
     repo = tmp_path / "workspace_e2e"
     _init_repo(repo)
-    _commit_file(
-        repo,
-        "packages/core/src/hl7poc_core/mod.py",
-        '''"""Module.
-
-    :func:`harness.does_not_exist.at_all`
-    """
-    ''',
-    )
+    module = f'"""Module.\n\n{_DANGLING_ROLE}\n"""\n'
+    _touch(repo, "packages/core/src/hl7poc_core/mod.py", module)
+    _touch(repo, "packages/core/tests/test_mod.py", module)
 
     unresolved, wrapped = check_docstring_refs.check(repo)
 
     assert not wrapped
-    assert len(unresolved) == 1
-    assert unresolved[0].ref == "harness.does_not_exist.at_all"
+    assert {str(f.path.relative_to(repo)) for f in unresolved} == {
+        "packages/core/src/hl7poc_core/mod.py",
+        "packages/core/tests/test_mod.py",
+    }
+    assert {f.ref for f in unresolved} == {"harness.does_not_exist.at_all"}
