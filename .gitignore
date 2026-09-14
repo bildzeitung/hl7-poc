@@ -26,3 +26,8 @@ __pycache__/
 *.db
 .beads-credential-key
 .beads/proxieddb/
+
+# hl7listener's default local spool dir (SPOOL_DIR=./spool) -- running the
+# compose acceptance from a worktree would otherwise leave it untracked,
+# the worktree would read dirty, and /land's GC would never reclaim it.
+spool/

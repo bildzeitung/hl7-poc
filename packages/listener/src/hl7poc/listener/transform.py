@@ -33,6 +33,19 @@ class TransformError(ValueError):
     """
 
 
+def parse_header(raw: str) -> MessageHeader | None:
+    """Read just the MSH into a header, or None if even that is unreadable.
+
+    The ingest path needs MSA-2 for its NACK when the full mapping failed;
+    routing that through this module keeps MSH indexing in one place.
+    """
+    try:
+        message = hl7.parse(raw)
+        return _build_header(message, message.segment("MSH"))
+    except _MAPPING_ERRORS:
+        return None
+
+
 def parse_message(raw: str) -> CanonicalMessage:
     """Parse a raw HL7 v2 message into the canonical model."""
     try:
