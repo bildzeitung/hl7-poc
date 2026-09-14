@@ -17,7 +17,7 @@
 # and never installs the console scripts.
 
 [build-system]
-requires = ["uv_build>=0.5,<0.6"]
+requires = ["uv_build>=0.6,<0.7"]
 build-backend = "uv_build"
 
 [project]
