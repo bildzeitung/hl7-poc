@@ -14,7 +14,6 @@ from hl7poc.model import (
     Patient,
     Result,
 )
-
 from hl7poc.worker import _serve, decide, handle, push
 
 
