@@ -44,10 +44,9 @@ ForwardFn = Callable[[CanonicalMessage, Path], Awaitable[None]]
 class ListenerState:
     """Readiness state shared between the MLLP/probe handlers and the retry loop.
 
-    /ready is spool-first: it requires MLLP bound, the spool dir writable, and
-    not shutting down. Service Bus reachability is NOT a readiness input (see
-    docs/decisions.md) -- sb_healthy is carried here only to report in
-    /ready's JSON body, updated by real send outcomes. A plain instance
+    /ready is spool-first -- MLLP bound, spool dir writable, not shutting down;
+    Service Bus is deliberately not an input (see docs/decisions.md), so
+    sb_healthy is carried only for the response body. A plain instance
     attribute set is enough since every reader/writer runs on the same event
     loop thread.
     """
@@ -58,22 +57,15 @@ class ListenerState:
         self.sb_healthy = False
         self.shutting_down = False
 
-    def as_dict(self) -> dict[str, bool]:
-        return {
+    def ready(self) -> tuple[bool, dict[str, bool]]:
+        spool_writable = os.access(self.spool_dir, os.W_OK)
+        fields = {
             "mllp_listening": self.mllp_listening,
             "sb_healthy": self.sb_healthy,
             "shutting_down": self.shutting_down,
-            "spool_writable": self._spool_writable(),
+            "spool_writable": spool_writable,
         }
-
-    def _spool_writable(self) -> bool:
-        return os.access(self.spool_dir, os.W_OK)
-
-    def ready(self) -> tuple[bool, dict]:
-        fields = self.as_dict()
-        is_ready = (
-            self.mllp_listening and fields["spool_writable"] and not self.shutting_down
-        )
+        is_ready = self.mllp_listening and spool_writable and not self.shutting_down
         return is_ready, fields
 
 
