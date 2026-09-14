@@ -12,10 +12,13 @@
 # commit it; the `lock_currency` gate (`uv lock --check`) fails on a lock that
 # no longer matches this file.
 #
-# No [build-system] yet, so uv treats this as a virtual project and installs
-# only the dependencies. When you add a package of your own, declare a build
-# backend (e.g. `[build-system] requires = ["uv_build"] build-backend =
-# "uv_build"`) and uv will install it editable on every sync.
+# [build-system] below uses uv_build so [project.scripts] installs editable
+# on every sync -- without a build backend uv treats the project as virtual
+# and never installs the console scripts.
+
+[build-system]
+requires = ["uv_build>=0.5,<0.6"]
+build-backend = "uv_build"
 
 [project]
 name = "hl7poc"
@@ -23,6 +26,7 @@ version = "0.0.0"
 requires-python = ">=3.11"
 dependencies = [
   "azure-servicebus>=7.12",
+  "typer",
 ]
 readme = "README.md"
 
@@ -46,9 +50,3 @@ target-version = "py311"
 [project.scripts]
 hl7listener = "hl7poc.listener:app"
 hl7worker = "hl7poc.worker:app"
-
-[tool.setuptools_scm]
-version_file = "src/hl7poc/_version.py"
-
-[tool.setuptools.packages.find]
-where = ["src"]
