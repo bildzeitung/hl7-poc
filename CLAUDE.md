@@ -38,7 +38,9 @@ These are synonyms, not distinctions. The agent and skill files use both forms:
 
 ## What this is
 
-<One or two paragraphs: what this project is, who it's for, and its current status.>
+This project seeks to explore how to process HL7 messages, using both a
+listener to capture the messages and feed a work queue while workers pick
+up the messages in order to process them.
 
 The source of truth is the design under [`docs/`](docs/). Read [`docs/design.md`](docs/design.md)
 first — it is the index with a map of the companion docs:
@@ -46,10 +48,6 @@ first — it is the index with a map of the companion docs:
 - [`docs/design.md`](docs/design.md) — the core problem, the bet, principles, build sequencing
 - [`docs/decisions.md`](docs/decisions.md) — open decisions, deferred but not forgotten
 - [`docs/configuration.md`](docs/configuration.md) — every tunable knob and build constant
-- <add your own design docs here>
-
-<If your docs grow past what fits in context, add a lookup tool and point at it here — e.g. an
-on-demand full-text index that prints `path:line_lo-line_hi` pointers rather than whole documents.>
 
 ## Python environment
 

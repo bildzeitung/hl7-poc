@@ -1,0 +1,36 @@
+name: hl7-lab
+
+services:
+  simhospital:
+    image: eu.gcr.io/simhospital-images/simhospital:latest
+    command:
+      - health/simulator
+      - -output=mllp
+      - -mllp_destination=host.docker.internal:2575
+      - -pathways_per_hour=60
+    ports:
+      - "8000:8000"                # dashboard
+    restart: unless-stopped        # retries until your local listener is up
+
+  servicebus:
+    image: mcr.microsoft.com/azure-messaging/servicebus-emulator:latest
+    volumes:
+      - ./servicebus-config.json:/ServiceBus_Emulator/ConfigFiles/Config.json:ro
+    ports:
+      - "5672:5672"                # AMQP -> local listener/worker connect here
+      - "5300:5300"                # admin client
+    environment:
+      SQL_SERVER: sqledge
+      MSSQL_SA_PASSWORD: "${MSSQL_SA_PASSWORD:-Str0ng!Passw0rd}"
+      ACCEPT_EULA: "Y"
+    depends_on:
+      sqledge:
+        condition: service_started
+    restart: unless-stopped
+
+  sqledge:
+    image: mcr.microsoft.com/azure-sql-edge:latest
+    environment:
+      ACCEPT_EULA: "Y"
+      MSSQL_SA_PASSWORD: "${MSSQL_SA_PASSWORD:-Str0ng!Passw0rd}"
+    restart: unless-stopped

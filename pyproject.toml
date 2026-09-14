@@ -1,0 +1,54 @@
+# Placeholder shipped by the agent harness -- rename the project and add your
+# runtime dependencies (`uv add <pkg>`). Keep the `dev` dependency group's
+# tools: noxfile.py's gate sessions run them out of the environment `uv run`
+# selects (shellcheck-py is how `nox -s shellcheck` finds shellcheck), and
+# scripts/check_links.py and friends import typer.
+#
+# This is a uv project: `uv.lock` is the only place exact versions live, and
+# `uv sync` / `uv run` build ./.venv from it. The harness ships no lock -- the
+# installer's `uv sync` resolves one on your machine, and it is yours to
+# commit with your first commit. Move the lock deliberately --
+# `uv add`, `uv lock --upgrade-package NAME`, or scripts/update-deps.sh -- and
+# commit it; the `lock_currency` gate (`uv lock --check`) fails on a lock that
+# no longer matches this file.
+#
+# No [build-system] yet, so uv treats this as a virtual project and installs
+# only the dependencies. When you add a package of your own, declare a build
+# backend (e.g. `[build-system] requires = ["uv_build"] build-backend =
+# "uv_build"`) and uv will install it editable on every sync.
+
+[project]
+name = "hl7poc"
+version = "0.0.0"
+requires-python = ">=3.11"
+dependencies = [
+  "azure-servicebus>=7.12",
+]
+readme = "README.md"
+
+[dependency-groups]
+dev = [
+  "nox",
+  "pytest",
+  "pytest-xdist",
+  "ruff",
+  "shellcheck-py",
+  "typer",
+]
+
+# Pinned so `nox -t fix` behaves the same on every machine: ruff otherwise
+# takes its line length from whichever config it finds walking up from the
+# file, and the shipped tests/ are formatted at this width.
+[tool.ruff]
+line-length = 88
+target-version = "py311"
+
+[project.scripts]
+hl7listener = "hl7poc.listener:app"
+hl7worker = "hl7poc.worker:app"
+
+[tool.setuptools_scm]
+version_file = "src/hl7poc/_version.py"
+
+[tool.setuptools.packages.find]
+where = ["src"]
