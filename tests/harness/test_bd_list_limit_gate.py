@@ -36,10 +36,10 @@ itself was filed about and the same widening `proj-lv04` made to a sibling gate.
 
 Markdown mixes prose with executable content in two shapes, and BOTH are scanned: the
 fenced blocks above, and inline single-backtick code spans inside a prose sentence (e.g.
-`.claude/skills/release/SKILL.md`'s release-notes step, which tells the agent to run
-`` `bd list --status=closed --type=epic --limit 0` `` as part of a numbered instruction,
-never inside a fence at all). AC1 in proj-200t names both explicitly -- a fence-only
-scanner would silently miss the release site the same way proj-2gun's grep missed
+a numbered instruction step that tells the agent to run
+`` `bd list --status=closed --type=epic --limit 0` `` never inside a fence at all).
+AC1 in proj-200t names both explicitly -- a fence-only
+scanner would silently miss such a site the same way proj-2gun's grep missed
 statusline.sh.
 
 What this gate deliberately does NOT scan: raw prose OUTSIDE a backtick span, and any
@@ -105,7 +105,7 @@ removes real noise for free: `.claude/skills/sweep/SKILL.md`'s section-2 fenced 
 carries a `# ... `bd list --json` rows already carry title...` comment that would
 otherwise need its own skip entry. Markdown prose has no equivalent "this can never
 run" structural signal -- an inline backtick span reads exactly like an operative command
-whether it is one or not (contrast `.claude/skills/release/SKILL.md`'s real, executed
+whether it is one or not (contrast a real, executed
 `` `bd list --status=closed --type=epic --limit 0` `` against
 `.claude/skills/land/SKILL.md`'s `` `bd list --label needs-rebase --status in_progress` ``,
 which is prose DESCRIBING `/code`'s real invocation -- already `--limit`-pinned at
@@ -253,12 +253,6 @@ SKIP_EXECUTED: dict[tuple[str, str], str] = {
 
 # Prose context: an inline single-backtick span outside any fence.
 SKIP_PROSE: dict[tuple[str, str], str] = {
-    (".claude/skills/release/SKILL.md", "bd list"): (
-        "Prose describing bd list's general sort order ('bd list sorts "
-        "priority-major, not by date') -- not an invocation. The real, "
-        "--limit-pinned call two lines above it is the inline-backtick site this "
-        "gate exists to catch (see the sabotage test for this exact site below)."
-    ),
     (".claude/skills/sweep/SKILL.md", "bd list"): (
         "Three bare, generic mentions in this file's own explanatory prose ('--limit "
         "0 on every `bd list` in this skill', '...and the `-C` between `bd` and "
@@ -380,7 +374,7 @@ def inline_violations(markdown: str) -> list[tuple[str, int]]:
     ``` inside a block (`.claude/agents/coding.md:447` has one, in a comment) inverts
     every pairing after it and starts stripping PROSE instead of code -- a silent false
     negative; and substituting the regions away destroys line numbers, which is not
-    cosmetic here (the release/SKILL.md inline site really at line 129 was once reported
+    cosmetic here (an inline site's real line 129 was once reported
     as line 96, sending a reader to the wrong place in the only message this gate ever
     prints). `fence_scan` reports the real `lineno` for every content line, fence or no
     fence, so that failure mode cannot recur.
@@ -557,7 +551,7 @@ def test_fenced_block_comment_is_never_flagged() -> None:
 
 
 def test_inline_backtick_command_without_limit_is_flagged() -> None:
-    """The release/SKILL.md shape: an operative command inside prose, never fenced."""
+    """An inline-backtick shape: an operative command inside prose, never fenced."""
     markdown = "Run `bd list --status=closed --type=epic` for the window.\n"
     assert inline_violations(markdown) == [("bd list --status=closed --type=epic", 1)]
 
@@ -629,7 +623,7 @@ def test_bash_fence_nested_inside_an_enclosing_non_bash_fence_is_not_executed() 
 
 def test_inline_line_numbers_survive_a_preceding_fence() -> None:
     """A region-substitution fence stripper collapses the fence away and shifts every
-    later line number (release/SKILL.md's line 129 was reported as 96). The state
+    later line number (an inline site's real line 129 was reported as 96). The state
     machine must report the real line."""
     markdown = "```bash\na\nb\nc\n```\nRun `bd list --json` here.\n"
     assert inline_violations(markdown) == [("bd list --json", 6)]
@@ -793,8 +787,6 @@ def test_no_unguarded_bd_list_call_sites() -> None:
 #                                       (stripping --limit 0 here left every existing
 #                                       test in the repo GREEN).
 #   .claude/skills/land/SKILL.md     -- fenced ```bash block.
-#   .claude/skills/release/SKILL.md  -- INLINE backtick span, never fenced: the site
-#                                       that motivated AC1's "not fence-only" clause.
 SABOTAGE_SITES = [
     (
         ".claude/statusline.sh",
@@ -810,11 +802,6 @@ SABOTAGE_SITES = [
         ".claude/skills/land/SKILL.md",
         "bd list --label ready-for-land --status in_progress --limit 0 --json",
         "bd list --label ready-for-land --status in_progress --json",
-    ),
-    (
-        ".claude/skills/release/SKILL.md",
-        "`bd list --status=closed --type=epic --limit 0`",
-        "`bd list --status=closed --type=epic`",
     ),
 ]
 

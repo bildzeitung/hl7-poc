@@ -223,7 +223,7 @@ def _run(
 ) -> subprocess.CompletedProcess:
     """Run `script_body` under `bash <flags> -c`, after sourcing
     gate-lib.sh with `source_args` on the source line -- the default `-uo
-    pipefail` (nounset) matches how merge-precheck.sh/release-bump.sh actually
+    pipefail` (nounset) matches how merge-precheck.sh/stacked-graph.sh actually
     run, and is the regime the unbound-array bug below only reproduces under.
 
     `flags` exists because the consumer set is NOT one regime:
@@ -273,8 +273,8 @@ def test_banner_and_cause_lines_go_to_stderr_with_exit_2():
 
 
 def test_no_gate_advisory_set_means_no_trailer_at_all():
-    """release-bump.sh's shape: no GATE_ADVISORY set, so nothing beyond the
-    caller's own cause lines is printed."""
+    """A bare-sentinel consumer's shape: no GATE_ADVISORY set, so nothing
+    beyond the caller's own cause lines is printed."""
     result = _run('gate_could_not_run "summary" "only cause line"')
 
     assert result.returncode == 2

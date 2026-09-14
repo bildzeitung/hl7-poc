@@ -57,7 +57,6 @@ modules are independent, so deleting a file is safe:
 
 | Drop if you… | Modules | Lines |
 |---|---|---|
-| don't use `/release` | `test_release_bump`, `test_release_latest_tag` | 749 |
 | don't use epics | `test_epic_*` (3) | 649 |
 | don't run `/sweep` | `test_sweep_*` (6) | 1,432 |
 | never fan out `/code` | `test_code_concurrency_cap` | 231 |

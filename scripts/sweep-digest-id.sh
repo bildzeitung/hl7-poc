@@ -12,10 +12,7 @@
 # query + jq count + refusal, already drifting in their diagnostics -- exactly the
 # "logic shared by two call sites belongs in scripts/, never duplicated in
 # markdown" rule docs/agents-workflow.md states, and the same "ungated inline
-# shell in a SKILL.md rots silently" lesson as scripts/epic-children-closed.sh
-#,
-# scripts/release-latest-tag.sh and scripts/release-bump.sh
-#.
+# shell in a SKILL.md rots silently" lesson as scripts/epic-children-closed.sh.
 #
 # Usage: scripts/sweep-digest-id.sh
 #
@@ -33,8 +30,7 @@
 #                      first -- the precise failure section 4 forbids, and the
 #                      reason this refusal is mechanical rather than prose.
 # Exit 2  -> MACHINE FAULT (bd or jq failed, malformed JSON). Same "exit 2 is the
-#            machine, never the content" convention as scripts/release-bump.sh /
-#            scripts/release-latest-tag.sh / scripts/merge-precheck.sh.
+#            machine, never the content" convention as scripts/merge-precheck.sh.
 #
 # Read-only: only ever calls `bd list`, never a bd write.
 

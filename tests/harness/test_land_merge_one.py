@@ -45,8 +45,8 @@ SCRIPT = REPO_ROOT / "scripts" / "land-merge-one.sh"
 def _assert_machine_fault_contract(stderr: str) -> None:
     """Every exit-2 path must emit the WHOLE shared machine-fault contract.
 
-    `scripts/merge-precheck.sh`, `scripts/validate-mermaid.sh` and
-    `scripts/release-bump.sh` all open an exit-2 diagnostic with the same
+    `scripts/merge-precheck.sh` and `scripts/validate-mermaid.sh`
+    all open an exit-2 diagnostic with the same
     ``GATE COULD NOT RUN:`` banner and close it with the same standing
     instruction not to blame a branch for it (proj-9i2p). Emitting only half
     of that is exactly how a machine fault gets read as a branch verdict, so

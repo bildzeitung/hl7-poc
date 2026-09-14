@@ -48,8 +48,8 @@
 # physical machine happens to run the suite. Do not set them to "tune" this
 # script -- use CODE_MAX_CONCURRENT_AGENTS for that.
 #
-# Resolves its own repo root (like scripts/release.sh) rather than trusting
-# the caller's cwd, since it reads noxfile.py by path.
+# Resolves its own repo root (like scripts/sweep-digest-id.sh) rather than
+# trusting the caller's cwd, since it reads noxfile.py by path.
 
 set -euo pipefail
 
