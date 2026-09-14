@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Verify every Sphinx-style symbol-naming role -- ``:func:``, ``:class:``,
 ``:data:``, ``:meth:``, ``:attr:``, ``:mod:``, ``:exc:``, ``:obj:`` -- naming a
-``harness.*`` symbol in a docstring or comment under ``src/`` or ``tests/``
-resolves to a real, importable symbol.
+``harness.*`` symbol in a docstring or comment under the project's source and
+test roots resolves to a real, importable symbol.
 
 Nothing gated this before: ``scripts/check_links.py`` is markdown-only. A
 single rename left FOUR dangling refs across two branches that
@@ -58,12 +58,12 @@ one -- see ``docs/decisions.md`` for the recorded reasoning behind the
 warn-then-unwrap-then-hard-fail sequencing.
 
 ``docs/decisions.md``'s own append-only exemption from pointer sweeps does
-not interact with this gate at all: this gate only ever reads ``src/`` and
-``tests/`` Python source, never ``docs/`` prose.
+not interact with this gate at all: this gate only ever reads Python source
+under the roots ``_scan_roots`` derives, never ``docs/`` prose.
 
 Usage::
 
-    python scripts/check_docstring_refs.py            # scan this checkout's src/ + tests/
+    python scripts/check_docstring_refs.py            # scan this checkout's derived roots
     python scripts/check_docstring_refs.py --root DIR  # scan a different tree (tests)
 """
 
@@ -83,8 +83,6 @@ import typer
 app = typer.Typer(add_completion=False)
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-
-SCAN_DIRS = ("src", "tests")
 
 # A Sphinx cross-reference role naming a Python symbol. DOTALL so the
 # backtick-delimited target can itself span a line-wrap -- catching that is
@@ -124,13 +122,39 @@ class RefFinding:
         return f"{self.path}:{self.line_no}: {self.reason} -> {self.ref}"
 
 
+_ROOT_PATTERNS = ("src", "tests", "packages/*/src", "packages/*/tests")
+
+
+def _scan_roots(root: Path) -> list[str]:
+    """Source/test directories (relative to ``root``) that exist on disk.
+
+    ``_ROOT_PATTERNS`` unions the legacy flat layout (``src/``, ``tests/``)
+    with the uv workspace layout (``packages/*/src``, ``packages/*/tests``)
+    hl7-poc-ouc's split introduces. A checkout can legitimately have both
+    mid-migration (some packages moved, others not), so this is a union,
+    never an either/or choice -- pinning either form alone makes the gate a
+    silent no-op on the other, which is the failure this gate exists to
+    prevent, one layer up.
+
+    The patterns still encode two conventions: members live under
+    ``packages/``, and each keeps its sources in ``src``/``tests``.
+    Reading ``[tool.uv.workspace].members`` instead would only ever replace
+    the first, so the coupling is inherent rather than a shortcut."""
+    return sorted(
+        str(path.relative_to(root))
+        for pattern in _ROOT_PATTERNS
+        for path in root.glob(pattern)
+        if path.is_dir()
+    )
+
+
 def _tracked_python_files(root: Path) -> list[Path]:
-    """Every ``*.py`` file git tracks under ``src/`` and ``tests/`` --
-    sourced from ``git ls-files``, like ``check_links.py``'s own walk, so
-    scratch or gitignored files never enter this gate. (The pathspec scoping
-    is this gate's own: ``check_links.py`` dropped its pathspecs once its
-    walk went repo-wide.)"""
-    existing_dirs = [d for d in SCAN_DIRS if (root / d).is_dir()]
+    """Every ``*.py`` file git tracks under this checkout's scan roots (see
+    ``_scan_roots``) -- sourced from ``git ls-files``, like
+    ``check_links.py``'s own walk, so scratch or gitignored files never
+    enter this gate. (The pathspec scoping is this gate's own:
+    ``check_links.py`` dropped its pathspecs once its walk went repo-wide.)"""
+    existing_dirs = _scan_roots(root)
     if not existing_dirs:
         return []
     out = subprocess.run(
@@ -248,16 +272,17 @@ def main(
     ] = None,
 ) -> None:
     """Fail if any symbol-naming Sphinx role (see ``_ROLE_RE``) naming a
-    ``harness.*`` symbol under ``src/`` or ``tests/`` does not resolve, OR if
-    any symbol-naming role is line-wrapped -- see the module docstring's
-    WRAPPED-REF DISPOSITION."""
+    ``harness.*`` symbol under this checkout's scan roots (see
+    ``_scan_roots``) does not resolve, OR if any symbol-naming role is
+    line-wrapped -- see the module docstring's WRAPPED-REF DISPOSITION."""
     target_root = (root or REPO_ROOT).resolve()
-    # Test the entry actually inserted, not a different one -- ``--root``'s
-    # tree must win over any ambient ``harness``, and the guard has to be able
-    # to observe that it already has.
-    src_dir = str(target_root / "src")
-    if src_dir not in sys.path:
-        sys.path.insert(0, src_dir)
+    # Every ``src``-shaped scan root, legacy or per-package, goes on
+    # sys.path -- ``--root``'s tree must win over any ambient ``harness``,
+    # and the guard has to be able to observe that it already has.
+    for scan_dir in _scan_roots(target_root):
+        src_dir = str(target_root / scan_dir)
+        if Path(scan_dir).name == "src" and src_dir not in sys.path:
+            sys.path.insert(0, src_dir)
     unresolved, wrapped = check(target_root)
     # Each kind prints its own findings immediately followed by its own
     # count -- interleaving the two loops first would detach every count
@@ -277,7 +302,7 @@ def main(
         raise typer.Exit(1)
     print(
         "OK: every symbol-naming Sphinx role naming a harness.* symbol under "
-        "src/ and tests/ resolves and none is line-wrapped"
+        "this checkout's scan roots resolves and none is line-wrapped"
     )
 
 
