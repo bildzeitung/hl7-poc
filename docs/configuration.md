@@ -47,8 +47,7 @@ Rationale for the Python version and the image tags: [`docs/decisions.md`](decis
 
 ## Local Service Bus emulator connection string
 
-Not yet recorded here: `hl7-poc-wld.2` (local broker config) is still in progress. Once it lands,
-the emulator's developer connection string — of the form
-`Endpoint=sb://localhost;SharedAccessKeyName=RootManageSharedAccessKey;SharedAccessKey=SAS_KEY_VALUE;UseDevelopmentEmulator=true;` —
-belongs here as the value a local `hl7listener`/`hl7worker` should pass for
-`SERVICEBUS_CONNECTION`.
+The value a local `hl7listener`/`hl7worker` should pass for `SERVICEBUS_CONNECTION` is the
+emulator's fixed developer connection string, recorded in [README.md's "Local Service Bus
+emulator" section](../README.md#local-service-bus-emulator) — the canonical location. Not
+duplicated here.
