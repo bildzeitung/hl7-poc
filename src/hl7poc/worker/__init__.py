@@ -7,11 +7,11 @@ app = typer.Typer(add_completion=False)
 
 @app.callback()
 def main() -> None:
-    """hl7worker CLI. Prevents Typer from collapsing the single `run` command."""
+    """hl7worker CLI."""
+    logging.basicConfig(level=logging.INFO)
 
 
 @app.command()
 def run() -> None:
     """Start the HL7 worker."""
-    logging.basicConfig(level=logging.INFO)
     logging.getLogger(__name__).info("hl7worker starting")

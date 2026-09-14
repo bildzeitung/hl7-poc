@@ -298,7 +298,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "azure-servicebus", specifier = ">=7.12" },
-    { name = "typer" },
+    { name = "typer", specifier = ">=0.12" },
 ]
 
 [package.metadata.requires-dev]
