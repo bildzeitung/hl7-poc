@@ -39,6 +39,8 @@ Fixed values carried over from the reference implementations, not exposed as env
 
 ## Python and image tags
 
+Rationale for the Python version and the image tags: [`docs/decisions.md`](decisions.md).
+
 - Python 3.14 end to end (`.python-version` at the repo root matches the local venv).
 - Listener/worker container build stage: `ghcr.io/astral-sh/uv:python3.14-bookworm-slim`.
 - Listener/worker container runtime stage: `python:3.14-slim-bookworm`.

@@ -81,8 +81,8 @@ authoritative order and current status):
 7. `hl7-poc-4f5` — one Dockerfile per service (after 6). Container contract: `docs/containers.md`
    once that ticket lands.
 8. `hl7-poc-wld.1` — remove the leftover release/versioning machinery (after 1).
-9. `hl7-poc-wld.4` (this document and its companions) — write the design record from the ticket
-   history, no blockers.
+9. `hl7-poc-wld.4` — the design record written from the ticket history: this document and its
+   companions (no blockers; done).
 
 Closed along the way: `hl7-poc-izt` (versioning: every distribution stays at static `0.0.0`) and
 `hl7-poc-5mx` (shared HL7 segment/field helpers, superseded once `hl7-poc-wld.3` gave the listener a
