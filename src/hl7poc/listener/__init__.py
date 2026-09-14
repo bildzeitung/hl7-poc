@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import asyncio
 import functools
+import json
 import logging
 import signal
 import sys
@@ -25,12 +26,11 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Annotated
 
-import hl7
 import typer
 from azure.servicebus import ServiceBusMessage
 from azure.servicebus.aio import ServiceBusClient
 
-from hl7poc.listener.transform import TransformError, parse_message
+from hl7poc.listener.transform import TransformError, parse_header, parse_message
 from hl7poc.model import CanonicalMessage, MessageHeader
 
 app = typer.Typer(add_completion=False)
@@ -38,7 +38,7 @@ logger = logging.getLogger(__name__)
 
 VT, FS, CR = b"\x0b", b"\x1c", b"\x0d"
 
-ForwardFn = Callable[[CanonicalMessage, "Path | None"], Awaitable[None]]
+ForwardFn = Callable[[CanonicalMessage, Path], Awaitable[None]]
 
 
 class ListenerState:
@@ -78,7 +78,10 @@ def extract_frames(buf: bytes) -> tuple[list[str], bytes]:
         skip = 2 if buf[end + 1 : end + 2] == CR else 1
         buf = buf[end + skip :]
         frames.append(raw)
-    return frames, buf
+    # Bytes before the next VT can never begin a frame; dropping them keeps a
+    # peer that sends unframed junk from growing the buffer without bound.
+    start = buf.find(VT)
+    return frames, buf[start:] if start != -1 else b""
 
 
 # ---- ACK building -----------------------------------------------------
@@ -96,38 +99,24 @@ def build_ack(header: MessageHeader, code: str) -> str:
 
 
 def _fallback_header(raw: str) -> MessageHeader:
-    """Best-effort MSH read for the ACK when the full transform failed.
+    """Header for the ACK when the full transform failed.
 
     Never raises -- an ACK must still go out even for a message python-hl7
-    itself cannot parse. Used only to fill MSA-2 and the ACK's own MSH; the
-    real header the mapping would have produced is unavailable here.
+    itself cannot parse, in which case MSA-2 carries a synthetic id because
+    the sender's control id is unreadable.
     """
-    try:
-        msh = hl7.parse(raw).segment("MSH")
-
-        def field(n: int) -> str:
-            return str(msh[n]) if n < len(msh) else ""
-
-        msg_type, _, event = field(9).partition("^")
-        return MessageHeader(
-            msg_type=msg_type or "UNK",
-            event=event,
-            control_id=field(10) or str(uuid.uuid4()),
-            sending_app=field(3),
-            sending_fac=field(4),
-            message_ts="",
-            hl7_version=field(12),
-        )
-    except Exception:  # noqa: BLE001 - this read must never itself fail the ACK
-        return MessageHeader(
-            msg_type="UNK",
-            event="",
-            control_id=str(uuid.uuid4()),
-            sending_app="",
-            sending_fac="",
-            message_ts="",
-            hl7_version="",
-        )
+    header = parse_header(raw)
+    if header is not None:
+        return header
+    return MessageHeader(
+        msg_type="UNK",
+        event="",
+        control_id=str(uuid.uuid4()),
+        sending_app="",
+        sending_fac="",
+        message_ts="",
+        hl7_version="",
+    )
 
 
 # ---- Service Bus message shaping (pure, unit-testable) --------------------
@@ -137,7 +126,10 @@ def build_service_bus_message(message: CanonicalMessage) -> ServiceBusMessage:
     return ServiceBusMessage(
         body=message.to_json(),
         session_id=message.patient.mrn or "unknown",  # per-patient ordering
-        message_id=message.header.control_id,  # duplicate detection key
+        # Duplicate detection key. An empty MSH-10 must NOT become an empty
+        # message_id: the queue would collapse every control-id-less message
+        # into one and drop the rest as duplicates.
+        message_id=message.header.control_id or str(uuid.uuid4()),
         application_properties={
             "msgType": message.header.msg_type,  # for future topic SQL filters
             "event": message.header.event,
@@ -146,6 +138,12 @@ def build_service_bus_message(message: CanonicalMessage) -> ServiceBusMessage:
 
 
 # ---- per-frame ingest: spool -> transform -> ACK -> schedule forward ------
+
+
+def _reject(file: Path, rejected_dir: Path) -> None:
+    """Set a frame the mapping rejected aside, out of the drain's reach."""
+    rejected_dir.mkdir(parents=True, exist_ok=True)
+    file.replace(rejected_dir / file.name)
 
 
 def _spool_path(spool_dir: Path) -> Path:
@@ -182,8 +180,7 @@ async def process_frame(
             header.control_id,
             err,
         )
-        rejected_dir.mkdir(parents=True, exist_ok=True)
-        file.replace(rejected_dir / file.name)
+        _reject(file, rejected_dir)
         return build_ack(header, "AE")
 
     ack = build_ack(message.header, "AA")
@@ -245,7 +242,7 @@ async def handle_http(
                 state.mllp_listening and state.sb_healthy and not state.shutting_down
             )
             status = "200 OK" if ready else "503 Service Unavailable"
-            body = str(state.as_dict()).encode()
+            body = json.dumps(state.as_dict()).encode()
         else:
             status, body = "404 Not Found", b""
         writer.write(
@@ -272,15 +269,30 @@ async def drain_spool(spool_dir: Path, rejected_dir: Path, forward: ForwardFn) -
             message = parse_message(raw)
         except TransformError as err:
             logger.error("drain: mapping failed, rejecting %s: %s", file.name, err)
-            rejected_dir.mkdir(parents=True, exist_ok=True)
-            file.replace(rejected_dir / file.name)
+            _reject(file, rejected_dir)
             continue
         await forward(message, file)
 
 
+async def _final_drain(
+    tasks: set[asyncio.Task],
+    spool_dir: Path,
+    rejected_dir: Path,
+    forward: ForwardFn,
+) -> None:
+    """Await in-flight forwards, then drain the spool.
+
+    A forward cancelled mid-send loses nothing (the spool file is unlinked
+    only after a successful send), but letting it finish first avoids
+    re-sending work that was about to complete.
+    """
+    await asyncio.gather(*tasks, return_exceptions=True)
+    await drain_spool(spool_dir, rejected_dir, forward)
+
+
 async def _forward(
     message: CanonicalMessage,
-    file: Path | None,
+    file: Path,
     *,
     sender,
     send_lock: asyncio.Lock,
@@ -291,8 +303,7 @@ async def _forward(
         async with send_lock:
             await sender.send_messages(sb_message)
         state.sb_healthy = True
-        if file:
-            file.unlink(missing_ok=True)
+        file.unlink(missing_ok=True)
     except Exception as err:  # noqa: BLE001 - any send failure degrades readiness
         state.sb_healthy = False
         logger.error(
@@ -320,12 +331,10 @@ async def retry_loop(
     state: ListenerState,
     sender,
     send_lock: asyncio.Lock,
+    forward: ForwardFn,
     spool_dir: Path,
     rejected_dir: Path,
 ) -> None:
-    forward = functools.partial(
-        _forward, sender=sender, send_lock=send_lock, state=state
-    )
     while not state.shutting_down:
         try:
             if not state.sb_healthy:
@@ -382,7 +391,7 @@ async def serve(
         logger.info("probes on :%d", http_port)
 
         retry = asyncio.create_task(
-            retry_loop(state, sender, send_lock, spool_dir, rejected_dir)
+            retry_loop(state, sender, send_lock, forward, spool_dir, rejected_dir)
         )
 
         stop = asyncio.Event()
@@ -397,7 +406,7 @@ async def serve(
         await mllp_server.wait_closed()
         try:
             await asyncio.wait_for(
-                drain_spool(spool_dir, rejected_dir, forward), timeout=8
+                _final_drain(tasks, spool_dir, rejected_dir, forward), timeout=8
             )
         except TimeoutError:
             logger.warning("shutdown drain timed out; spool retained")

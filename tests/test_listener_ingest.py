@@ -1,8 +1,16 @@
 import asyncio
 import json
 
-from hl7poc.listener import CR, FS, VT, build_ack, extract_frames, process_frame
-from hl7poc.model import CanonicalMessage, MessageHeader
+from hl7poc.listener import (
+    CR,
+    FS,
+    VT,
+    build_ack,
+    build_service_bus_message,
+    extract_frames,
+    process_frame,
+)
+from hl7poc.model import CanonicalMessage, MessageHeader, Patient
 
 ADT_A01 = (
     "MSH|^~\\&|SND|FAC|RCV|FAC2|20240101120000||ADT^A01|MSG001|P|2.5\r"
@@ -125,3 +133,29 @@ def test_bad_frame_gets_ae_and_is_rejected_not_forwarded(tmp_path) -> None:
     assert forwarded == []
     assert list(spool_dir.glob("*.hl7")) == []
     assert len(list(rejected_dir.glob("*.hl7"))) == 1
+
+
+def test_extract_frames_drops_unframed_junk() -> None:
+    frames, buf = extract_frames(b"junk with no start block")
+
+    assert frames == []
+    assert buf == b""
+
+
+def test_service_bus_message_id_is_never_empty() -> None:
+    message = CanonicalMessage(
+        header=MessageHeader(
+            msg_type="ADT",
+            event="A01",
+            control_id="",
+            sending_app="SND",
+            sending_fac="FAC",
+            message_ts="",
+            hl7_version="2.5",
+        ),
+        patient=Patient(mrn="MRN123"),
+    )
+
+    # An empty message_id would make duplicate detection collapse every
+    # control-id-less message into one.
+    assert build_service_bus_message(message).message_id
