@@ -29,7 +29,6 @@ from typing import Annotated
 import typer
 from azure.servicebus import ServiceBusMessage
 from azure.servicebus.aio import ServiceBusClient
-
 from hl7poc.listener.transform import TransformError, parse_header, parse_message
 from hl7poc.model import CanonicalMessage, MessageHeader
 
