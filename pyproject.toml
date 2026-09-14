@@ -26,6 +26,7 @@ version = "0.0.0"
 requires-python = ">=3.11"
 dependencies = [
   "azure-servicebus>=7.12",
+  "hl7>=0.4.5",
   "typer>=0.12",
 ]
 readme = "README.md"
