@@ -55,11 +55,11 @@ frozen harness files, the doctor, tooling no skill invokes) already stayed behin
 `dev-tests/`. What is genuinely optional here is **whatever gates a skill you don't use**. The
 modules are independent, so deleting a file is safe:
 
-| Drop if you… | Modules | Lines |
-|---|---|---|
-| don't use epics | `test_epic_*` (3) | 649 |
-| don't run `/sweep` | `test_sweep_*` (5) | 1,164 |
-| never fan out `/code` | `test_code_concurrency_cap` | 233 |
+| Drop if you… | Modules |
+|---|---|
+| don't use epics | `test_epic_*` (3) |
+| don't run `/sweep` | `test_sweep_*` (5) |
+| never fan out `/code` | `test_code_concurrency_cap` |
 
 **Keep regardless**, whatever else you drop — these gate code that deletes worktrees, resets
 branches, force-removes refs, or spends the user's public identity, where a regression is
