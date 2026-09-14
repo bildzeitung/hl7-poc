@@ -1,7 +1,6 @@
 import json
 
 import pytest
-
 from hl7poc.model import (
     CanonicalMessage,
     MessageHeader,

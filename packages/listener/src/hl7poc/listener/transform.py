@@ -10,7 +10,6 @@ from __future__ import annotations
 import hl7
 from hl7.exceptions import HL7Exception
 from hl7.util import unescape
-
 from hl7poc.model import (
     Appointment,
     CanonicalMessage,
