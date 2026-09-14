@@ -48,14 +48,18 @@ first — it is the index with a map of the companion docs:
 
 ## Python environment
 
-This is a [uv](https://docs.astral.sh/uv/) project. `uv` owns the interpreter, the venv, and the lock:
+This is a [uv](https://docs.astral.sh/uv/) **workspace**. `uv` owns the interpreter, the venv, and the
+lock. The root `pyproject.toml` is not a distribution: it owns `[tool.uv.workspace]`, the `dev`
+dependency group, `[tool.ruff]` and the single `uv.lock`. Runtime dependencies and console scripts
+live in the members under `packages/` (`core`, `listener`, `worker`), so a runtime dep is always
+added to a member, never to the root:
 
 ```bash
 uv sync                          # build ./.venv from uv.lock (uv run does this on demand too)
 uv run --frozen nox -t fix       # format + lint
 uv run --frozen nox -s tests     # the project's test suite (ignores tests/harness/)
 uv run --frozen nox -s harness_tests   # the harness's own gate tests (tests/harness/); gates reach it via scripts/harness-tests-gate.sh
-uv add <pkg>                     # add a runtime dependency (updates pyproject.toml AND uv.lock)
+uv add --package hl7poc-listener <pkg>   # add a runtime dep to ONE workspace member (updates its pyproject.toml AND uv.lock)
 scripts/update-deps.sh           # move the lock past what pyproject.toml forces, gated
 ```
 

@@ -1,0 +1,13 @@
+[build-system]
+requires = ["uv_build>=0.8,<0.12"]
+build-backend = "uv_build"
+
+[project]
+name = "hl7poc-core"
+version = "0.0.0"
+requires-python = ">=3.11"
+dependencies = []
+
+[tool.uv.build-backend]
+module-name = "hl7poc.model"
+namespace = true

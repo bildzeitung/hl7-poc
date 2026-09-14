@@ -6,6 +6,23 @@ resolution-markers = [
     "python_full_version < '3.15'",
 ]
 
+[manifest]
+members = [
+    "hl7poc-core",
+    "hl7poc-listener",
+    "hl7poc-worker",
+]
+
+[manifest.dependency-groups]
+dev = [
+    { name = "nox" },
+    { name = "pytest" },
+    { name = "pytest-xdist" },
+    { name = "ruff" },
+    { name = "shellcheck-py" },
+    { name = "typer" },
+]
+
 [[package]]
 name = "annotated-doc"
 version = "0.0.5"
@@ -286,40 +303,44 @@ wheels = [
 ]
 
 [[package]]
-name = "hl7poc"
+name = "hl7poc-core"
 version = "0.0.0"
-source = { editable = "." }
+source = { editable = "packages/core" }
+
+[[package]]
+name = "hl7poc-listener"
+version = "0.0.0"
+source = { editable = "packages/listener" }
 dependencies = [
     { name = "azure-servicebus" },
     { name = "hl7" },
-    { name = "typer" },
-]
-
-[package.dev-dependencies]
-dev = [
-    { name = "nox" },
-    { name = "pytest" },
-    { name = "pytest-xdist" },
-    { name = "ruff" },
-    { name = "shellcheck-py" },
+    { name = "hl7poc-core" },
     { name = "typer" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "azure-servicebus", specifier = ">=7.12" },
-    { name = "hl7", specifier = ">=0.4.5" },
+    { name = "hl7", specifier = ">=0.4" },
+    { name = "hl7poc-core", editable = "packages/core" },
     { name = "typer", specifier = ">=0.12" },
 ]
 
-[package.metadata.requires-dev]
-dev = [
-    { name = "nox" },
-    { name = "pytest" },
-    { name = "pytest-xdist" },
-    { name = "ruff" },
-    { name = "shellcheck-py" },
+[[package]]
+name = "hl7poc-worker"
+version = "0.0.0"
+source = { editable = "packages/worker" }
+dependencies = [
+    { name = "azure-servicebus" },
+    { name = "hl7poc-core" },
     { name = "typer" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "azure-servicebus", specifier = ">=7.12" },
+    { name = "hl7poc-core", editable = "packages/core" },
+    { name = "typer", specifier = ">=0.12" },
 ]
 
 [[package]]
