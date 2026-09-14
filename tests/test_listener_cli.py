@@ -6,10 +6,7 @@ runner = CliRunner()
 
 
 def test_help_exits_zero() -> None:
+    # A bare invocation runs the service forever -- --help is the only
+    # CliRunner-safe path; the serving coroutine is never invoked by tests.
     result = runner.invoke(app, ["--help"])
-    assert result.exit_code == 0
-
-
-def test_run_exits_zero() -> None:
-    result = runner.invoke(app, ["run"])
     assert result.exit_code == 0

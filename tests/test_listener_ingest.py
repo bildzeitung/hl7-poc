@@ -1,0 +1,127 @@
+import asyncio
+import json
+
+from hl7poc.listener import CR, FS, VT, build_ack, extract_frames, process_frame
+from hl7poc.model import CanonicalMessage, MessageHeader
+
+ADT_A01 = (
+    "MSH|^~\\&|SND|FAC|RCV|FAC2|20240101120000||ADT^A01|MSG001|P|2.5\r"
+    "PID|1||MRN123^^^HOSP^MR||Doe^John^A||19800101|M\r"
+)
+
+BAD_FRAME = "GARBAGE NOT HL7\r"
+
+
+def _framed(raw: str, *, trailing_cr: bool = True) -> bytes:
+    tail = FS + CR if trailing_cr else FS
+    return VT + raw.encode() + tail
+
+
+# ---- extract_frames --------------------------------------------------------
+
+
+def test_extract_frames_handles_frame_split_across_reads() -> None:
+    whole = _framed(ADT_A01)
+    part_a, part_b = whole[:10], whole[10:]
+
+    frames, buf = extract_frames(part_a)
+    assert frames == []
+
+    frames, buf = extract_frames(buf + part_b)
+    assert frames == [ADT_A01]
+    assert buf == b""
+
+
+def test_extract_frames_handles_two_frames_in_one_read() -> None:
+    combined = _framed(ADT_A01) + _framed(BAD_FRAME)
+
+    frames, buf = extract_frames(combined)
+
+    assert frames == [ADT_A01, BAD_FRAME]
+    assert buf == b""
+
+
+def test_extract_frames_handles_fs_without_trailing_cr() -> None:
+    frames, buf = extract_frames(_framed(ADT_A01, trailing_cr=False))
+
+    assert frames == [ADT_A01]
+    assert buf == b""
+
+
+# ---- build_ack --------------------------------------------------------------
+
+
+def test_build_ack_carries_code_and_control_id_from_header() -> None:
+    header = MessageHeader(
+        msg_type="ADT",
+        event="A01",
+        control_id="MSG001",
+        sending_app="SND",
+        sending_fac="FAC",
+        message_ts="20240101120000",
+        hl7_version="2.5",
+    )
+
+    ack = build_ack(header, "AA")
+
+    assert "MSA|AA|MSG001\r" in ack
+    assert ack.startswith("MSH|")
+
+
+# ---- process_frame ----------------------------------------------------------
+
+
+def test_good_frame_gets_aa_and_forwards_model_json(tmp_path) -> None:
+    spool_dir = tmp_path / "spool"
+    spool_dir.mkdir()
+    rejected_dir = spool_dir / "rejected"
+    forwarded: list[tuple[CanonicalMessage, object]] = []
+
+    async def stub_forward(message, file) -> None:
+        forwarded.append((message, file))
+
+    async def run() -> str:
+        return await process_frame(
+            ADT_A01,
+            spool_dir=spool_dir,
+            rejected_dir=rejected_dir,
+            forward=stub_forward,
+            tasks=set(),
+        )
+
+    ack = asyncio.run(run())
+
+    assert "MSA|AA|MSG001" in ack
+    assert len(forwarded) == 1
+    message, file = forwarded[0]
+    assert message.header.control_id == "MSG001"
+    # The forwarded body is the canonical model as JSON, not raw HL7.
+    body = json.loads(message.to_json())
+    assert body["patient"]["mrn"] == "MRN123"
+    assert file.exists()
+
+
+def test_bad_frame_gets_ae_and_is_rejected_not_forwarded(tmp_path) -> None:
+    spool_dir = tmp_path / "spool"
+    spool_dir.mkdir()
+    rejected_dir = spool_dir / "rejected"
+    forwarded: list[object] = []
+
+    async def stub_forward(message, file) -> None:
+        forwarded.append(message)
+
+    async def run() -> str:
+        return await process_frame(
+            BAD_FRAME,
+            spool_dir=spool_dir,
+            rejected_dir=rejected_dir,
+            forward=stub_forward,
+            tasks=set(),
+        )
+
+    ack = asyncio.run(run())
+
+    assert "MSA|AE|" in ack
+    assert forwarded == []
+    assert list(spool_dir.glob("*.hl7")) == []
+    assert len(list(rejected_dir.glob("*.hl7"))) == 1
