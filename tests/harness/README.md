@@ -37,7 +37,7 @@ update it **deliberately** — that failure is the review prompt, not noise.
 So rewriting explanation is free; changing a command, a guard, or a state-load call is what trips a
 gate — which is the correct scope, not gratuitous brittleness.
 
-Three carry allowlists (`test_bd_list_limit_gate`'s prose-skip entries,
+Two carry allowlists (`test_bd_list_limit_gate`'s prose-skip entries,
 `test_land_skill_guard_coverage`'s mutating-command exemptions). Each demands its entries still
 match something live, so an exemption that stops applying fails rather than silently exempting
 nothing.
@@ -58,8 +58,8 @@ modules are independent, so deleting a file is safe:
 | Drop if you… | Modules | Lines |
 |---|---|---|
 | don't use epics | `test_epic_*` (3) | 649 |
-| don't run `/sweep` | `test_sweep_*` (6) | 1,432 |
-| never fan out `/code` | `test_code_concurrency_cap` | 231 |
+| don't run `/sweep` | `test_sweep_*` (5) | 1,164 |
+| never fan out `/code` | `test_code_concurrency_cap` | 233 |
 
 **Keep regardless**, whatever else you drop — these gate code that deletes worktrees, resets
 branches, force-removes refs, or spends the user's public identity, where a regression is

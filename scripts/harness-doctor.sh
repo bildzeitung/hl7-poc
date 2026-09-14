@@ -109,10 +109,10 @@ done
 
 echo
 echo "agents and skills"
-for a in coding code-reviewer land-review; do
+for a in coding code-reviewer land-review comment-auditor comment-groomer; do
   if [ -f ".claude/agents/$a.md" ]; then ok ".claude/agents/$a.md"; else bad ".claude/agents/$a.md missing"; fi
 done
-for s in code land challenge epic-audit sweep; do
+for s in code land challenge epic-audit sweep comment-audit; do
   if [ -f ".claude/skills/$s/SKILL.md" ]; then ok ".claude/skills/$s/SKILL.md"; else bad ".claude/skills/$s/SKILL.md missing"; fi
 done
 
