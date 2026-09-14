@@ -10,18 +10,17 @@ This is the source hcs's rule builder writes against without needing to read the
 
 ## Where the two halves live
 
-- **`hl7poc.model`** (`src/hl7poc/model.py`) — the types below, `to_json`/`from_json`. Stdlib
+- **`hl7poc.model`** (`packages/core/src/hl7poc/model.py`) — the types below, `to_json`/`from_json`. Stdlib
   dataclasses and `json` only, no third-party imports: both the listener and worker images install
   this module.
-- **`hl7poc.listener.transform`** (`src/hl7poc/listener/transform.py`) — `parse_message(raw: str) ->
+- **`hl7poc.listener.transform`** (`packages/listener/src/hl7poc/listener/transform.py`) — `parse_message(raw: str) ->
   CanonicalMessage`, built on [python-hl7](https://pypi.org/project/hl7/) (the `hl7` PyPI package).
   Raises `TransformError` on anything it can't map.
 
 **The invariant that makes the images separable:** `hl7poc.model` imports nothing third-party, and
-`hl7` is imported only from `hl7poc.listener.transform`. While the project is still a single
-installable package, `hl7` is declared in the root `pyproject.toml`; once hl7-poc-ouc splits it into
-core/listener/worker workspace members, `hl7` moves to the listener member and the "a worker-only
-sync cannot `import hl7`" check becomes literally runnable.
+`hl7` is imported only from `hl7poc.listener.transform`. The project is split into `core`/`listener`/
+`worker` workspace members; `hl7` is declared only in `packages/listener/pyproject.toml`, so `uv sync
+--package hl7poc-worker` installs no `hl7` and `import hl7` fails there.
 
 ## `CanonicalMessage`
 
