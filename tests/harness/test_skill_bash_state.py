@@ -91,8 +91,8 @@ gate, proj-x495).
 proj-x495 explicitly permitted either scoping this gate to `land/SKILL.md` only and
 widening later, or shipping repo-wide with an allowlist. This gate ships **repo-wide**
 (`.claude/skills/*/SKILL.md`) with an allowlist, because the bug class is not
-land-local (per the ticket's own title) and `/sweep` already carried
-real, confirmed instances that a land-only gate would leave silently uncovered.
+land-local (per the ticket's own title) and `/sweep` already carried real,
+confirmed instances that a land-only gate would leave silently uncovered.
 
 `proj-lv04` widened the same gate to `.claude/agents/*.md` -- markdown instruction
 files whose fenced bash an agent executes exactly the same way, block by block, under
@@ -245,8 +245,8 @@ _KNOWN_ENV_VARS: dict[str, str] = {
 ALLOWLIST: dict[tuple[str, str], str] = {
     ("skills/land/SKILL.md", "ACCEPTED"): (
         "Section 3a's ordered, land-review-verdict-derived accepted set -- "
-        "computed by the agent's own "
-        "reasoning across Sections 2c (dispatched land-review verdicts) and 3a "
+        "computed by the agent's own reasoning across Sections 2c (dispatched "
+        "land-review verdicts) and 3a "
         "(stacked-branch ordering), never by any single deterministic bash command in "
         "the file. land/SKILL.md states the checkable property itself, right next to "
         "the persist block: the set 'encodes land-review's per-branch judgment, which "

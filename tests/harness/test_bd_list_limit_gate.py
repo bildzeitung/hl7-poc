@@ -36,11 +36,10 @@ itself was filed about and the same widening `proj-lv04` made to a sibling gate.
 
 Markdown mixes prose with executable content in two shapes, and BOTH are scanned: the
 fenced blocks above, and inline single-backtick code spans inside a prose sentence (e.g.
-a numbered instruction step that tells the agent to run
-`` `bd list --status=closed --type=epic --limit 0` `` never inside a fence at all).
-AC1 in proj-200t names both explicitly -- a fence-only
-scanner would silently miss such a site the same way proj-2gun's grep missed
-statusline.sh.
+`.claude/skills/epic-audit/SKILL.md`'s `` `bd list --parent <epic-id> --all --limit 0
+--json` ``, a real invocation stated in a prose sentence, never inside a fence at all).
+AC1 in proj-200t names both explicitly -- a fence-only scanner would silently miss such
+a site the same way proj-2gun's grep missed statusline.sh.
 
 What this gate deliberately does NOT scan: raw prose OUTSIDE a backtick span, and any
 `#`-comment (bash) or fenced-but-non-bash content. Markdown prose in this corpus refers
@@ -105,8 +104,8 @@ removes real noise for free: `.claude/skills/sweep/SKILL.md`'s section-2 fenced 
 carries a `# ... `bd list --json` rows already carry title...` comment that would
 otherwise need its own skip entry. Markdown prose has no equivalent "this can never
 run" structural signal -- an inline backtick span reads exactly like an operative command
-whether it is one or not (contrast a real, executed
-`` `bd list --status=closed --type=epic --limit 0` `` against
+whether it is one or not (contrast `.claude/skills/epic-audit/SKILL.md`'s real,
+executed `` `bd list --parent <epic-id> --all --limit 0 --json` `` against
 `.claude/skills/land/SKILL.md`'s `` `bd list --label needs-rebase --status in_progress` ``,
 which is prose DESCRIBING `/code`'s real invocation -- already `--limit`-pinned at
 `.claude/skills/code/SKILL.md:121` -- not a second site to pin here). That is exactly
@@ -374,9 +373,9 @@ def inline_violations(markdown: str) -> list[tuple[str, int]]:
     ``` inside a block (`.claude/agents/coding.md:447` has one, in a comment) inverts
     every pairing after it and starts stripping PROSE instead of code -- a silent false
     negative; and substituting the regions away destroys line numbers, which is not
-    cosmetic here (an inline site's real line 129 was once reported
-    as line 96, sending a reader to the wrong place in the only message this gate ever
-    prints). `fence_scan` reports the real `lineno` for every content line, fence or no
+    cosmetic here (a real inline site was once reported dozens of lines above its
+    true position, sending a reader to the wrong place in the only message this gate
+    ever prints). `fence_scan` reports the real `lineno` for every content line, fence or no
     fence, so that failure mode cannot recur.
 
     Decided deliberately (proj-kjei acceptance criteria): the trailing-blank-line
@@ -623,8 +622,8 @@ def test_bash_fence_nested_inside_an_enclosing_non_bash_fence_is_not_executed() 
 
 def test_inline_line_numbers_survive_a_preceding_fence() -> None:
     """A region-substitution fence stripper collapses the fence away and shifts every
-    later line number (an inline site's real line 129 was reported as 96). The state
-    machine must report the real line."""
+    later line number, so a real inline site gets reported well above its true
+    position. The state machine must report the real line."""
     markdown = "```bash\na\nb\nc\n```\nRun `bd list --json` here.\n"
     assert inline_violations(markdown) == [("bd list --json", 6)]
 
@@ -787,6 +786,8 @@ def test_no_unguarded_bd_list_call_sites() -> None:
 #                                       (stripping --limit 0 here left every existing
 #                                       test in the repo GREEN).
 #   .claude/skills/land/SKILL.md     -- fenced ```bash block.
+#   .claude/skills/epic-audit/SKILL.md -- INLINE backtick span, never fenced: the
+#                                       shape AC1's "not fence-only" clause exists for.
 SABOTAGE_SITES = [
     (
         ".claude/statusline.sh",
@@ -802,6 +803,11 @@ SABOTAGE_SITES = [
         ".claude/skills/land/SKILL.md",
         "bd list --label ready-for-land --status in_progress --limit 0 --json",
         "bd list --label ready-for-land --status in_progress --json",
+    ),
+    (
+        ".claude/skills/epic-audit/SKILL.md",
+        "`bd list --parent <epic-id> --all --limit 0 --json`",
+        "`bd list --parent <epic-id> --all --json`",
     ),
 ]
 

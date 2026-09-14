@@ -223,8 +223,8 @@ def _run(
 ) -> subprocess.CompletedProcess:
     """Run `script_body` under `bash <flags> -c`, after sourcing
     gate-lib.sh with `source_args` on the source line -- the default `-uo
-    pipefail` (nounset) matches how merge-precheck.sh/stacked-graph.sh actually
-    run, and is the regime the unbound-array bug below only reproduces under.
+    pipefail` (nounset) matches how merge-precheck.sh actually runs, and is
+    the regime the unbound-array bug below only reproduces under.
 
     `flags` exists because the consumer set is NOT one regime:
     validate-mermaid.sh ships `#!/bin/bash -e`, and `-e` is the flag under
@@ -273,8 +273,10 @@ def test_banner_and_cause_lines_go_to_stderr_with_exit_2():
 
 
 def test_no_gate_advisory_set_means_no_trailer_at_all():
-    """A bare-sentinel consumer's shape: no GATE_ADVISORY set, so nothing
-    beyond the caller's own cause lines is printed."""
+    """No consumer ships this shape today (every one passes --no-advisory or an
+    advisory array); the test pins gate_could_not_run's print logic on its own:
+    with no GATE_ADVISORY set, nothing beyond the caller's own cause lines is
+    printed."""
     result = _run('gate_could_not_run "summary" "only cause line"')
 
     assert result.returncode == 2
