@@ -44,7 +44,7 @@ nothing.
 
 ## Do I need all of them?
 
-The suite is 35 modules / 934 tests / under a minute with 8 workers — and, through the gate
+The suite is 36 modules / 940 tests / under a minute with 8 workers — and, through the gate
 script, it costs an ordinary project branch nothing. The test *count* is mostly parametrisation —
 `test_gh_write_guard` alone contributes 335 cases, one per `gh` command form, in about ten
 seconds. Count is not cost.
