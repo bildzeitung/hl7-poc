@@ -2,9 +2,6 @@
 
 This file provides guidance to Claude Code when working with code in this repository.
 
-> **Template note:** everything in `<angle brackets>` is a placeholder for you to fill in. Delete
-> this note once you have. See `docs/getting-started.md` in the harness export for the walkthrough.
-
 ## ⛔ STOP — WORK IN A WORKTREE, NEVER ON `main`
 
 **EVERY change to this repository — code, docs, configs, ANYTHING — MUST be made in a git worktree,
