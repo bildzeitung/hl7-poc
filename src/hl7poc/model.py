@@ -96,8 +96,14 @@ class CanonicalMessage:
             data = json.loads(raw)
         except json.JSONDecodeError as exc:
             raise ModelError(f"invalid JSON body: {exc}") from exc
-        if "schema_version" not in data:
-            raise ModelError("body missing schema_version")
+        # A body with a missing or unknown wire version cannot be trusted to
+        # fill these fields; decoding it anyway would fabricate a valid-looking
+        # model out of a format we do not know.
+        if data.get("schema_version") != SCHEMA_VERSION:
+            raise ModelError(
+                f"unsupported schema_version {data.get('schema_version')!r} "
+                f"(expected {SCHEMA_VERSION})"
+            )
 
         try:
             header = MessageHeader(**data["header"])
@@ -109,10 +115,10 @@ class CanonicalMessage:
             result_data = data.get("result")
             result = None
             if result_data:
-                observations = [
+                result_data["observations"] = [
                     Observation(**o) for o in result_data.get("observations", [])
                 ]
-                result = Result(**{**result_data, "observations": observations})
+                result = Result(**result_data)
         except (KeyError, TypeError) as exc:
             raise ModelError(f"malformed body: {exc}") from exc
 
@@ -122,5 +128,4 @@ class CanonicalMessage:
             visit=visit,
             appointment=appointment,
             result=result,
-            schema_version=data["schema_version"],
         )

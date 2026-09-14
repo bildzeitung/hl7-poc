@@ -54,16 +54,18 @@ def parse_message(raw: str) -> CanonicalMessage:
         raise TransformError(f"cannot map message: {exc}") from exc
 
 
-def _field(segment, index: int) -> str | None:
-    if index >= len(segment):
+def _optional_segment(message, name: str):
+    try:
+        return message.segment(name)
+    except KeyError:
         return None
-    text = str(segment[index])
-    return text or None
 
 
 def _unescaped(message, segment, index: int) -> str | None:
-    text = _field(segment, index)
-    return unescape(message, text) if text is not None else None
+    if index >= len(segment):
+        return None
+    text = str(segment[index])
+    return unescape(message, text) if text else None
 
 
 def _component(message, segment, index: int, component: int) -> str | None:
@@ -95,12 +97,11 @@ def _build_header(message, msh) -> MessageHeader:
 
 
 def _build_patient(message) -> Patient:
-    try:
-        pid = message.segment("PID")
-    except KeyError:
+    pid = _optional_segment(message, "PID")
+    if pid is None:
         return Patient()
     return Patient(
-        mrn=_component(message, pid, 3, 0) or _unescaped(message, pid, 3),
+        mrn=_component(message, pid, 3, 0),
         family_name=_component(message, pid, 5, 0),
         given_name=_component(message, pid, 5, 1),
         middle_name=_component(message, pid, 5, 2),
@@ -110,9 +111,8 @@ def _build_patient(message) -> Patient:
 
 
 def _build_visit(message) -> Visit | None:
-    try:
-        pv1 = message.segment("PV1")
-    except KeyError:
+    pv1 = _optional_segment(message, "PV1")
+    if pv1 is None:
         return None
     return Visit(
         patient_class=_unescaped(message, pv1, 2),
@@ -121,9 +121,8 @@ def _build_visit(message) -> Visit | None:
 
 
 def _build_appointment(message) -> Appointment | None:
-    try:
-        sch = message.segment("SCH")
-    except KeyError:
+    sch = _optional_segment(message, "SCH")
+    if sch is None:
         return None
     # SCH-11 is a TQ (Timing Quantity): component 4 is start, 5 is end.
     return Appointment(
@@ -136,9 +135,8 @@ def _build_appointment(message) -> Appointment | None:
 
 
 def _build_result(message) -> Result | None:
-    try:
-        obr = message.segment("OBR")
-    except KeyError:
+    obr = _optional_segment(message, "OBR")
+    if obr is None:
         return None
     try:
         obx_segments = message.segments("OBX")
@@ -147,8 +145,7 @@ def _build_result(message) -> Result | None:
     return Result(
         placer_order_number=_unescaped(message, obr, 2),
         filler_order_number=_unescaped(message, obr, 3),
-        universal_service_id=_component(message, obr, 4, 0)
-        or _unescaped(message, obr, 4),
+        universal_service_id=_component(message, obr, 4, 0),
         status=_unescaped(message, obr, 25),
         observation_ts=_unescaped(message, obr, 7),
         observations=[_build_observation(message, obx) for obx in obx_segments],
@@ -158,7 +155,7 @@ def _build_result(message) -> Result | None:
 def _build_observation(message, obx) -> Observation:
     return Observation(
         set_id=_unescaped(message, obx, 1),
-        identifier=_component(message, obx, 3, 0) or _unescaped(message, obx, 3),
+        identifier=_component(message, obx, 3, 0),
         value=_unescaped(message, obx, 5),
         units=_unescaped(message, obx, 6),
         reference_range=_unescaped(message, obx, 7),

@@ -1,3 +1,5 @@
+import json
+
 import pytest
 
 from hl7poc.model import (
@@ -37,13 +39,16 @@ def test_round_trip_to_json_from_json() -> None:
 
 
 def test_from_json_rejects_missing_schema_version() -> None:
-    body = _sample().to_json()
-    without_version = body.replace('"schema_version": 1', "")
-    # Drop the trailing comma left by the removal above so the JSON parses;
-    # this test cares about the missing-key check, not JSON well-formedness.
-    without_version = without_version.replace(", }", "}")
+    body = json.loads(_sample().to_json())
+    del body["schema_version"]
     with pytest.raises(ModelError, match="schema_version"):
-        CanonicalMessage.from_json(without_version)
+        CanonicalMessage.from_json(json.dumps(body))
+
+
+def test_from_json_rejects_unsupported_schema_version() -> None:
+    body = _sample().to_json().replace('"schema_version": 1', '"schema_version": 99')
+    with pytest.raises(ModelError, match="unsupported schema_version"):
+        CanonicalMessage.from_json(body)
 
 
 def test_from_json_rejects_invalid_json() -> None:

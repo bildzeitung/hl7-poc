@@ -20,7 +20,7 @@ ORU_R01 = (
     "MSH|^~\\&|SND|FAC|RCV|FAC2|20240101120000||ORU^R01|MSG003|P|2.5\r"
     "PID|1||MRN125||Brown^Sam\r"
     "OBR|1|PL1|FL1|CODE1^Test One^L|||20240101120500||||||||||||||||||F\r"
-    "OBX|1|ST|CODE2^Test\\T\\Two^L||val1~val2|mg/dL|1-5|N|||F\r"
+    "OBX|1|ST|CODE2^Test One^L||val1~Smith \\T\\ Jones|mg/dL|1-5|N|||F\r"
     "OBX|2|ST|CODE3^Test Three^L||val3|mg/dL|1-5|N|||F\r"
 )
 
@@ -69,10 +69,11 @@ def test_oru_r01_maps_result_and_observations_with_escapes_and_repetition() -> N
     assert len(message.result.observations) == 2
 
     first, second = message.result.observations
-    # "\T\" is HL7's escape for the component separator "&" -- confirms
-    # unescaping runs, not just raw text passthrough.
     assert first.identifier == "CODE2"
-    assert first.value == "val1~val2"
+    # OBX-5 carries a repetition (kept as raw "~"-joined text) and "\T\",
+    # HL7's escape for the subcomponent separator "&". The decoded "&" is
+    # what proves unescaping runs on a mapped field, not raw passthrough.
+    assert first.value == "val1~Smith & Jones"
     assert second.identifier == "CODE3"
     assert second.value == "val3"
 

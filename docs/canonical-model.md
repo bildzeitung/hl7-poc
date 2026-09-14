@@ -17,20 +17,18 @@ This is the source hcs's rule builder writes against without needing to read the
   CanonicalMessage`, built on [python-hl7](https://pypi.org/project/hl7/) (the `hl7` PyPI package).
   Raises `TransformError` on anything it can't map.
 
-**Workspace-split note:** hl7-poc-ouc (in flight concurrently) splits this project into a uv
-workspace with separate `core`/`listener`/`worker` members, each with its own dependency set. That
-split hasn't landed yet, so today `hl7` is a whole-project dependency in `pyproject.toml` — there is
-only one installable package. The module placement above (model with zero third-party imports,
-`hl7` imported only from `hl7poc.listener.transform`) is exactly what ouc's split needs to carry
-forward: once core/listener/worker become separate members, `hl7` moves to the listener member's
-`pyproject.toml` and the worker-image acceptance check (`python -c 'import hl7'` fails under a
-worker-only sync) becomes literally checkable. Until then that specific check is not yet meaningful.
+**The invariant that makes the images separable:** `hl7poc.model` imports nothing third-party, and
+`hl7` is imported only from `hl7poc.listener.transform`. While the project is still a single
+installable package, `hl7` is declared in the root `pyproject.toml`; once hl7-poc-ouc splits it into
+core/listener/worker workspace members, `hl7` moves to the listener member and the "a worker-only
+sync cannot `import hl7`" check becomes literally runnable.
 
 ## `CanonicalMessage`
 
 ```
 CanonicalMessage
-├── schema_version: int (wire format version; from_json rejects a body missing this field)
+├── schema_version: int (wire format version; from_json rejects a body whose
+│                       schema_version is missing or not the version this code knows)
 ├── header: MessageHeader
 ├── patient: Patient
 ├── visit: Visit | None            (present when the message carries PV1)
