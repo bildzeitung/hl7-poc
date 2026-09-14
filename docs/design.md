@@ -95,5 +95,4 @@ real parser and the worker stopped seeing HL7 altogether).
 - [`docs/configuration.md`](configuration.md) — every tunable knob and build constant, per service.
 - `docs/canonical-model.md` — the canonical model's field list (owned by `hl7-poc-wld.3`; not yet
   written).
-- `docs/containers.md` — the container build/run contract (owned by `hl7-poc-4f5`; not yet
-  written).
+- [`docs/containers.md`](containers.md) — the container build/run contract.

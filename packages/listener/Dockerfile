@@ -29,6 +29,11 @@ COPY --from=builder /app/.venv /app/.venv
 ENV PATH=/app/.venv/bin:$PATH \
     SPOOL_DIR=/spool
 
+# The spool dir must exist in the image owned by the non-root user: a VOLUME
+# path absent from the image is created root-owned at run time, and an
+# anonymous volume inherits ownership from the image directory.
+RUN install -d -o hl7poc -g hl7poc /spool
+
 VOLUME /spool
 EXPOSE 2575 8080
 

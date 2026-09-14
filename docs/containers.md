@@ -20,20 +20,23 @@ the bare command runs the service. There is no `HEALTHCHECK`: k8s probes
 ## Env-var contract
 
 Both images are configured entirely through environment variables — nothing
-is baked in at build time.
+is baked in at build time. Defaults and CLI-flag equivalents live in
+[`docs/configuration.md`](configuration.md), the single source for them; this
+section only says which variables each image reads.
 
 **Listener** (`hl7poc-listener`, `EXPOSE 2575 8080`):
 
 - `SERVICEBUS_CONNECTION`, `SERVICEBUS_QUEUE` — where canonical messages are forwarded
-- `HTTP_PORT` — the `/live` and `/ready` probe port (8080 by default)
-- `MLLP_PORT` — the MLLP listen port (2575 by default)
-- `SPOOL_DIR` — durable spool directory; set to `/spool` in the image and
-  declared as a `VOLUME`, so a k8s volume mount survives a container restart
+- `HTTP_PORT` — the `/live` and `/ready` probe port
+- `MLLP_PORT` — the MLLP listen port
+- `SPOOL_DIR` — durable spool directory; set to `/spool` in the image, owned by
+  the non-root user and declared as a `VOLUME`, so a k8s volume mount survives a
+  container restart
 
 **Worker** (`hl7poc-worker`, `EXPOSE 8081`):
 
 - `SERVICEBUS_CONNECTION`, `SERVICEBUS_QUEUE` — the canonical-message queue to consume
-- `HTTP_PORT` — the `/live` probe port (8081 by default)
+- `HTTP_PORT` — the `/live` probe port
 - `WEBHOOK_URL` — where qualifying notifications are pushed
 
 ## Local test infrastructure vs. shipping code
