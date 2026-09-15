@@ -120,14 +120,9 @@ def tests(session: nox.Session) -> None:
     _run_partitioned(session, "--ignore=tests/harness", empty_ok=True)
 
 
-#: Workspace member distribution names, as declared by each packages/*/pyproject.toml's
-#: [project] name -- not directory names, since `uv build --package` takes the dist name.
-WORKSPACE_MEMBERS = ("hl7poc-core", "hl7poc-listener", "hl7poc-worker")
-
-
 @nox.session
 def build_members(session: nox.Session) -> None:
-    """Actually BUILD each workspace member's wheel/sdist with `uv build`.
+    """Actually BUILD every workspace member's wheel/sdist with `uv build`.
 
     `nox -s tests` cannot catch a packaging misconfiguration (e.g. a
     [tool.uv.build-backend] module-name naming a file instead of a package
@@ -135,14 +130,17 @@ def build_members(session: nox.Session) -> None:
     import straight off packages/*/src regardless of what a real build would
     produce. This session builds each member for real, into a throwaway temp
     dir that is always removed -- never into the repo.
+
+    The member set comes from `--all-packages`, i.e. from
+    [tool.uv.workspace], never a roster here: a member that fell outside a
+    hand-kept list would be exactly the one nobody build-gated.
     """
     uv = shutil.which("uv")
     if uv is None:
         session.log("build_members: 'uv' is not on PATH -- install uv and re-run")
         sys.exit(2)
     with tempfile.TemporaryDirectory(prefix="nox-build-members-") as tmp:
-        for member in WORKSPACE_MEMBERS:
-            session.run(uv, "build", "--package", member, "-o", tmp, external=True)
+        session.run(uv, "build", "--all-packages", "-o", tmp, external=True)
 
 
 @nox.session
