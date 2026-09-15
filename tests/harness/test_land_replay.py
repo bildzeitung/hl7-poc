@@ -1,6 +1,6 @@
 """scripts/land-replay.sh -- the resumable isolation replay, on real repos.
 
-The replay runs `4 + 4N` gate sessions in a path that cannot be backgrounded
+The replay runs `5 + 5N` gate sessions in a path that cannot be backgrounded
 and is capped at 600s per tool call. A straight-through loop hits that ceiling
 mid-attribution, so nothing is bounced and the next pass rebuilds the same set and
 reds again. These cases pin the properties that stop that:
@@ -21,6 +21,7 @@ import shutil
 import subprocess
 from pathlib import Path
 
+import pytest
 from conftest import REPO_ROOT
 
 
@@ -170,12 +171,17 @@ def test_baseline_red_is_never_attributed_to_a_branch(tmp_path: Path) -> None:
     assert st["landed"].read_text() == ""
 
 
-def test_a_culprit_is_backed_out_and_reported_not_bounced(tmp_path: Path) -> None:
+@pytest.mark.parametrize("red_phase", ["fix", "tests", "harness", "build"])
+def test_a_culprit_is_backed_out_and_reported_not_bounced(
+    tmp_path: Path, red_phase: str
+) -> None:
+    """Every phase is pinned separately: a gate the per-branch loop forgets to
+    invoke, or whose rc it drops, would let a red one through as a SURVIVOR."""
     repo = _repo(tmp_path)
     _land_branch(repo, "good", "good.txt", "g")
     _land_branch(repo, "bad", "bad.txt", "b")
     st = _state(repo, "good", "bad")
-    r = _replay(repo, st, _stub(repo, red_when_present="bad.txt"))
+    r = _replay(repo, st, _stub(repo, red_when_present="bad.txt", red_phase=red_phase))
     assert r.returncode == 1, f"{r.stdout}\n{r.stderr}"
     assert ("SURVIVOR", "good") in _records(r)
     assert ("CULPRIT", "bad") in _records(r)
@@ -226,7 +232,7 @@ def test_resume_does_not_re_baseline_or_reset_away_survivors(tmp_path: Path) -> 
 
 
 def test_deadline_yields_with_progress_persisted_then_resumes(tmp_path: Path) -> None:
-    """A deadline of 30s with a stub that sleeps past the per-branch budget forces
+    """A deadline of 40s with a stub that sleeps past the per-branch budget forces
     the yield after the first branch; the resume must finish the rest."""
     repo = _repo(tmp_path)
     for t in ("a", "b", "c"):
@@ -241,7 +247,7 @@ def test_deadline_yields_with_progress_persisted_then_resumes(tmp_path: Path) ->
     )
     slow.chmod(0o755)
 
-    first = _replay(repo, st, slow, "--deadline-seconds", "30")
+    first = _replay(repo, st, slow, "--deadline-seconds", "40")
     assert first.returncode == 3, f"{first.stdout}\n{first.stderr}"
     more = [r for r in _records(first) if r[0] == "MORE"]
     assert more, "a deadline yield must report how much is left"
