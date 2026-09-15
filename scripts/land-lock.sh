@@ -92,12 +92,15 @@
 # named boundary points, not literally every line of the pass. Do not read
 # "heartbeat exists" as "the whole pass is covered":
 #   1. Section 3's single COMBINED re-gate (`nox -t fix && nox -s tests &&
-#      nox -s build_members && nox -s lock_currency`, plus `validate-mermaid.sh`
-#      on a docs change), which runs once, between the merge loop and the
-#      isolation-replay loop. MEASURED on the 2026-07-28 dev machine at ~60s
-#      total (tests ~50s, fix ~0.4s, lock_currency ~1s, mermaid ~10s); the
-#      figure excludes build_members -- comfortably small, but it is
-#      wall-clock on one machine, not a bound. Unlike the two gaps an earlier fix
+#      scripts/harness-tests-gate.sh --base-ref origin/main && nox -s build_members
+#      && nox -s lock_currency`, plus `validate-mermaid.sh` on a docs change),
+#      which runs once, between the merge loop and the isolation-replay loop.
+#      MEASURED on the 2026-09-15 dev machine (the pass that landed hl7-poc-adr)
+#      at ~45s worst case: fix ~0.4s, tests ~2s, harness_tests ~39s (fires only
+#      when the merged set touched a harness path, else one line and exit 0),
+#      build_members ~0.4s (uv build, warm cache), lock_currency ~1s --
+#      comfortably small, but it is wall-clock on one machine, not a bound.
+#      Unlike the two gaps an earlier fix
 #      closed, this one does NOT grow with the size of the `ready-for-land`
 #      queue -- it runs exactly once per pass regardless of how many tickets
 #      are being landed -- which is why it was left uncovered rather than
