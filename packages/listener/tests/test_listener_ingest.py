@@ -1,8 +1,6 @@
 import asyncio
 import json
 
-from hl7poc.model import CanonicalMessage, MessageHeader, Patient
-
 from hl7poc.listener import (
     CR,
     FS,
@@ -12,6 +10,7 @@ from hl7poc.listener import (
     extract_frames,
     process_frame,
 )
+from hl7poc.model import CanonicalMessage, MessageHeader, Patient
 
 ADT_A01 = (
     "MSH|^~\\&|SND|FAC|RCV|FAC2|20240101120000||ADT^A01|MSG001|P|2.5\r"
