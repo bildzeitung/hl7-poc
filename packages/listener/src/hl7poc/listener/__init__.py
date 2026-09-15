@@ -73,16 +73,19 @@ class ListenerState:
 # ---- MLLP framing (pure, unit-testable without asyncio) -------------------
 
 
-def extract_frames(buf: bytes) -> tuple[list[str], bytes]:
+def extract_frames(buf: bytes) -> tuple[list[bytes], bytes]:
     """Split complete VT...FS[CR] frames out of an accumulating byte buffer.
 
-    Returns the decoded frames found and whatever partial data is left for
-    the next read -- so a frame split across two socket reads is simply
-    whatever remains after the first call, fed back in on the second.
+    Returns the raw frame bytes found, undecoded, and whatever partial data
+    is left for the next read -- so a frame split across two socket reads is
+    simply whatever remains after the first call, fed back in on the second.
+    Decoding happens in process_frame, after the bytes are already spooled --
+    see docs/decisions.md (undecodable frames are NACKed, never
+    silently replaced).
     """
-    frames: list[str] = []
+    frames: list[bytes] = []
     while (start := buf.find(VT)) != -1 and (end := buf.find(FS, start)) != -1:
-        raw = buf[start + 1 : end].decode("utf-8", errors="replace")
+        raw = buf[start + 1 : end]
         skip = 2 if buf[end + 1 : end + 2] == CR else 1
         buf = buf[end + skip :]
         frames.append(raw)
@@ -159,7 +162,7 @@ def _spool_path(spool_dir: Path) -> Path:
 
 
 async def process_frame(
-    raw: str,
+    raw: bytes,
     *,
     spool_dir: Path,
     rejected_dir: Path,
@@ -176,15 +179,31 @@ async def process_frame(
     try:
         # Bytes, not text: text mode translates outgoing LF to os.linesep,
         # breaking the byte-exact round-trip a CRLF-terminated frame needs.
-        file.write_bytes(raw.encode("utf-8"))  # durable first
+        file.write_bytes(raw)  # durable first, byte-exact
     except OSError as err:
         logger.error("spool write failed, NACKing: %s", err)
-        return build_ack(_fallback_header(raw), "AE")
+        header = _fallback_header(raw.decode("utf-8", errors="replace"))
+        return build_ack(header, "AE")
+
+    # Fail closed on undecodable bytes rather than silently replacing them
+    # (docs/decisions.md) -- the sender's AA would otherwise cover data that
+    # was never actually forwarded intact.
+    try:
+        text = raw.decode("utf-8")
+    except UnicodeDecodeError as err:
+        header = _fallback_header(raw.decode("utf-8", errors="replace"))
+        logger.error(
+            "frame is not valid UTF-8 for control id %s, NACKing and rejecting: %s",
+            header.control_id,
+            err,
+        )
+        _reject(file, rejected_dir)
+        return build_ack(header, "AE")
 
     try:
-        message = parse_message(raw)
+        message = parse_message(text)
     except TransformError as err:
-        header = _fallback_header(raw)
+        header = _fallback_header(text)
         logger.error(
             "mapping failed for control id %s, NACKing and rejecting: %s",
             header.control_id,

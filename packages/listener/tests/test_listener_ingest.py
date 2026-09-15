@@ -37,7 +37,7 @@ def test_extract_frames_handles_frame_split_across_reads() -> None:
     assert frames == []
 
     frames, buf = extract_frames(buf + part_b)
-    assert frames == [ADT_A01]
+    assert frames == [ADT_A01.encode()]
     assert buf == b""
 
 
@@ -46,14 +46,14 @@ def test_extract_frames_handles_two_frames_in_one_read() -> None:
 
     frames, buf = extract_frames(combined)
 
-    assert frames == [ADT_A01, BAD_FRAME]
+    assert frames == [ADT_A01.encode(), BAD_FRAME.encode()]
     assert buf == b""
 
 
 def test_extract_frames_handles_fs_without_trailing_cr() -> None:
     frames, buf = extract_frames(_framed(ADT_A01, trailing_cr=False))
 
-    assert frames == [ADT_A01]
+    assert frames == [ADT_A01.encode()]
     assert buf == b""
 
 
@@ -91,7 +91,7 @@ def test_good_frame_gets_aa_and_forwards_model_json(tmp_path) -> None:
 
     async def run() -> str:
         return await process_frame(
-            ADT_A01,
+            ADT_A01.encode(),
             spool_dir=spool_dir,
             rejected_dir=rejected_dir,
             forward=stub_forward,
@@ -121,7 +121,40 @@ def test_bad_frame_gets_ae_and_is_rejected_not_forwarded(tmp_path) -> None:
 
     async def run() -> str:
         return await process_frame(
-            BAD_FRAME,
+            BAD_FRAME.encode(),
+            spool_dir=spool_dir,
+            rejected_dir=rejected_dir,
+            forward=stub_forward,
+            tasks=set(),
+        )
+
+    ack = asyncio.run(run())
+
+    assert "MSA|AE|" in ack
+    assert forwarded == []
+    assert list(spool_dir.glob("*.hl7")) == []
+    assert len(list(rejected_dir.glob("*.hl7"))) == 1
+
+
+def test_invalid_utf8_frame_gets_ae_and_is_rejected_not_forwarded(tmp_path) -> None:
+    spool_dir = tmp_path / "spool"
+    spool_dir.mkdir()
+    rejected_dir = spool_dir / "rejected"
+    forwarded: list[object] = []
+    invalid = (
+        VT
+        + b"MSH|^~\\&|SND|FAC|RCV|FAC2|20240101120000||ADT^A01|\xff\xfe|P|2.5\r"
+        + FS
+        + CR
+    )
+
+    async def stub_forward(message, file) -> None:
+        forwarded.append(message)
+
+    async def run() -> str:
+        frames, _ = extract_frames(invalid)
+        return await process_frame(
+            frames[0],
             spool_dir=spool_dir,
             rejected_dir=rejected_dir,
             forward=stub_forward,
@@ -146,7 +179,7 @@ def test_drain_spool_preserves_cr_segment_terminators(tmp_path) -> None:
 
     asyncio.run(
         process_frame(
-            ADT_A01,
+            ADT_A01.encode(),
             spool_dir=spool_dir,
             rejected_dir=rejected_dir,
             forward=discard,
