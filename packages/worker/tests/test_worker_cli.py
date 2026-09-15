@@ -1,5 +1,6 @@
-from hl7poc.worker import app
 from typer.testing import CliRunner
+
+from hl7poc.worker import app
 
 runner = CliRunner()
 
