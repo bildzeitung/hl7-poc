@@ -198,6 +198,29 @@ def test_drain_spool_preserves_cr_segment_terminators(tmp_path) -> None:
     assert drained[0].patient.mrn == "MRN123"
 
 
+def test_drain_spool_rejects_undecodable_file_without_aborting_the_pass(
+    tmp_path,
+) -> None:
+    """A crash between process_frame's spool write and its reject can leave
+    undecodable bytes in the spool; the drain must set that file aside and
+    keep going rather than strand every later file behind it."""
+    spool_dir = tmp_path / "spool"
+    spool_dir.mkdir()
+    rejected_dir = spool_dir / "rejected"
+    (spool_dir / "0-bad.hl7").write_bytes(b"MSH|^~\\&|A\xff\r")
+    (spool_dir / "1-good.hl7").write_bytes(ADT_A01.encode())
+
+    drained: list[CanonicalMessage] = []
+
+    async def record(message, file) -> None:
+        drained.append(message)
+
+    asyncio.run(drain_spool(spool_dir, rejected_dir, record))
+
+    assert [m.patient.mrn for m in drained] == ["MRN123"]
+    assert [f.name for f in rejected_dir.glob("*.hl7")] == ["0-bad.hl7"]
+
+
 def test_extract_frames_drops_unframed_junk() -> None:
     frames, buf = extract_frames(b"junk with no start block")
 
