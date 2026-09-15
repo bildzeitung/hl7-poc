@@ -174,8 +174,9 @@ async def process_frame(
     """
     file = _spool_path(spool_dir)
     try:
-        # Bytes, not text: text mode translates outgoing LF to os.linesep,
-        # breaking the byte-exact round-trip a CR-terminated frame needs.
+        # Bytes, not text: text mode would rewrite LF bytes to os.linesep,
+        # breaking the byte-exact copy of the CR-terminated frame the drain
+        # re-parses.
         file.write_bytes(raw.encode("utf-8"))  # durable first
     except OSError as err:
         logger.error("spool write failed, NACKing: %s", err)
