@@ -59,6 +59,7 @@ uv sync                          # build ./.venv from uv.lock (uv run does this 
 uv run --frozen nox -t fix       # format + lint
 uv run --frozen nox -s tests     # the project's test suite (ignores tests/harness/)
 uv run --frozen nox -s harness_tests   # the harness's own gate tests (tests/harness/); gates reach it via scripts/harness-tests-gate.sh
+uv run --frozen nox -s build_members   # actually BUILDS each workspace member's wheel -- catches packaging bugs `tests` cannot (editable installs sidestep them)
 uv add --package hl7poc-listener <pkg>   # add a runtime dep to ONE workspace member (updates its pyproject.toml AND uv.lock)
 scripts/update-deps.sh           # move the lock past what pyproject.toml forces, gated
 ```

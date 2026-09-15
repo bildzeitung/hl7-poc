@@ -9,5 +9,5 @@ requires-python = ">=3.14"
 dependencies = []
 
 [tool.uv.build-backend]
-module-name = "hl7poc.model"
+module-name = "hl7poc"
 namespace = true
