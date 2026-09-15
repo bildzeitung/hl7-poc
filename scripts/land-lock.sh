@@ -96,16 +96,17 @@
 #      && nox -s lock_currency`, plus `validate-mermaid.sh` on a docs change),
 #      which runs once, between the merge loop and the isolation-replay loop.
 #      MEASURED on the 2026-09-15 dev machine (the pass that landed hl7-poc-adr)
-#      at ~45s worst case: fix ~0.4s, tests ~2s, harness_tests ~39s (fires only
-#      when the merged set touched a harness path, else one line and exit 0),
-#      build_members ~0.4s (uv build, warm cache), lock_currency ~1s --
-#      comfortably small, but it is wall-clock on one machine, not a bound.
-#      Unlike the two gaps an earlier fix
-#      closed, this one does NOT grow with the size of the `ready-for-land`
-#      queue -- it runs exactly once per pass regardless of how many tickets
-#      are being landed -- which is why it was left uncovered rather than
-#      folded into this ticket; re-deriving whether it is worth a call site of
-#      its own is a separate decision, not implied by this one.
+#      at ~43s for the `&&` chain: fix ~0.4s, tests ~2s, harness_tests ~39s
+#      (fires only when the merged set touched a harness path, else one line
+#      and exit 0), build_members ~0.4s (uv build, warm cache), lock_currency
+#      ~1s; `validate-mermaid.sh` adds ~10s on top when a docs diagram changed
+#      (2026-07-28 figure, not re-measured), so ~53s worst case. Comfortably
+#      small, but it is wall-clock on one machine, not a bound. Unlike the two
+#      gaps an earlier fix closed, this one does NOT grow with the size of the
+#      `ready-for-land` queue -- it runs exactly once per pass regardless of
+#      how many tickets are being landed -- which is why it was left
+#      uncovered; re-deriving whether it is worth a call site of its own is a
+#      separate decision.
 #
 # an earlier fix (2026-08-07) closed the other two of the original three -- both of
 # which DID grow with queue size, unlike the one above -- by adding the first
