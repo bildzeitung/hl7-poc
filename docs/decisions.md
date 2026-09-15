@@ -108,6 +108,17 @@ since a lock bump can change what a build resolves. It deliberately does **not**
 gets there): those gates catch it earlier only at the cost of one real build per branch, and
 `/land`'s single combined pass already catches it before anything reaches `main`.
 
+**2026-09-15 — Undecodable frame bytes NACK, never silently replace (`hl7-poc-bkk`).** The listener
+guarantees wire fidelity: a frame that is not valid UTF-8 is rejected (spooled to
+`<spool-dir>/rejected/`, logged with whatever control id a best-effort lossy decode can recover for
+the log line only, and NACKed with an AE) rather than forwarded with `errors="replace"` munging the
+bytes an AA ACK would then vouch for. This is the same "durable first, never lose data silently"
+stance `hl7-poc-hob` already applied to the spool's CR-terminator round-trip; that ticket's
+land-review flagged the live-path `errors="replace"` decode in `extract_frames` as the sibling gap
+this decision closes. `extract_frames` no longer decodes at all -- it returns raw frame bytes, and
+`process_frame` spools those bytes byte-exact before attempting the strict UTF-8 decode, so the
+undecodable bytes are never lost even though they are never forwarded.
+
 ## Deferred, not forgotten
 
 Decisions this project has deliberately not made yet. Each stays open until a ticket revisits it.
