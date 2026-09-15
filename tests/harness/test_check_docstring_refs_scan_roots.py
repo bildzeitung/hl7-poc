@@ -8,14 +8,15 @@ scanned files, the worst failure mode for a gate.
 
 These tests build throwaway trees on disk covering the legacy layout, the
 workspace layout, and both at once, and assert the derived roots -- not just
-that today's checkout (still legacy-only, pending hl7-poc-ouc) happens to
-work. The trees are git-committed because ``_tracked_python_files`` sources
-its file list from ``git ls-files``: an untracked tree scans as empty however
-``_scan_roots`` resolves it.
+that today's checkout happens to work. The trees are git-committed because
+``_tracked_python_files`` sources its file list from ``git ls-files``: an
+untracked tree scans as empty however ``_scan_roots`` resolves it.
 """
 
 from __future__ import annotations
 
+import subprocess
+import sys
 from pathlib import Path
 
 from _gitrepo import _commit_file, _git
@@ -177,3 +178,46 @@ def test_checked_count_is_zero_and_distinguishable_when_no_refs(
     assert not wrapped
     assert not unresolved
     assert checked == 0
+
+
+def _run_gate(repo: Path) -> subprocess.CompletedProcess:
+    """Drive the real CLI entry point in a subprocess rather than calling
+    ``check()``. ``check()`` only RETURNS the count; the exit code and the
+    wording that make a zero-checked run distinguishable live in ``main()``,
+    so nothing below ``main()`` can pin them."""
+    return subprocess.run(
+        [sys.executable, str(SCRIPT), "--root", str(repo)],
+        capture_output=True,
+        text=True,
+        timeout=120,
+        check=False,
+    )
+
+
+def test_cli_reports_the_count_on_the_success_line(tmp_path: Path) -> None:
+    repo = tmp_path / "cli_nonzero"
+    _init_repo(repo)
+    _touch(
+        repo,
+        "packages/core/src/hl7poc_core/mod.py",
+        f'"""Module.\n\n{_INTACT_ROLE}\n\n{_MOD_ROLE}\n"""\n',
+    )
+
+    result = _run_gate(repo)
+
+    assert result.returncode == 0, result.stderr
+    assert "checked 2 hl7poc.* reference(s)" in result.stdout
+
+
+def test_cli_fails_when_zero_references_are_checked(tmp_path: Path) -> None:
+    """Zero checked is a hard failure, not a quieter green -- the exact
+    green-over-zero vacuity this gate exists to refuse. Pinned at the CLI
+    because the exit code is the only thing a caller sees."""
+    repo = tmp_path / "cli_zero"
+    _init_repo(repo)
+    _touch(repo, "packages/core/src/hl7poc_core/mod.py", '"""No refs here."""\n')
+
+    result = _run_gate(repo)
+
+    assert result.returncode == 1
+    assert "zero hl7poc.* references checked" in result.stderr

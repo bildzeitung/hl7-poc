@@ -104,9 +104,9 @@ _ROLE_RE = re.compile(
 class RefFinding:
     """One reported ref, carrying its own wording in ``reason`` -- mirrors
     ``check_links.py``'s ``LinkError``. The two finding kinds differ only in
-    that wording; both hard-fail, so which list a finding lands in no
-    longer decides severity -- it decides only how the findings are grouped
-    and counted in ``main()``'s report. The split is kept over one flat
+    that wording; both hard-fail, so which list a finding lands in decides
+    only how the findings are grouped and counted in ``main()``'s report,
+    never severity. The split is kept over one flat
     list because list membership is a typed discriminator the callers (and
     tests) can rely on, where ``reason`` is free text."""
 
@@ -126,8 +126,8 @@ def _scan_roots(root: Path) -> list[str]:
     """Source/test directories (relative to ``root``) that exist on disk.
 
     ``_ROOT_PATTERNS`` unions the legacy flat layout (``src/``, ``tests/``)
-    with the uv workspace layout (``packages/*/src``, ``packages/*/tests``)
-    this repo actually uses. A checkout can legitimately have both
+    with the uv workspace layout (``packages/*/src``, ``packages/*/tests``).
+    A checkout can legitimately have both
     mid-migration (some packages moved, others not), so this is a union,
     never an either/or choice -- pinning either form alone makes the gate a
     silent no-op on the other, which is the failure this gate exists to
@@ -237,9 +237,11 @@ def _refs_in_file(text: str) -> list[tuple[int, str]]:
 def check(root: Path) -> tuple[list[RefFinding], list[RefFinding], int]:
     """Returns ``(unresolved, wrapped, checked)``. ``checked`` counts every
     role that passed the ``hl7poc.`` prefix filter and was run through
-    ``resolve_ref`` -- whether it resolved or not -- so the caller can tell
-    "checked N references, all resolve" apart from "checked zero", which a
-    plain pass/fail result cannot distinguish."""
+    ``resolve_ref``, whether or not it resolved. Counting here rather than
+    deciding here is deliberate: what a zero count MEANS is a policy about
+    this checkout, so it lives in ``main()`` -- see the module docstring's
+    CHECKED-REFERENCE COUNT section. A ``--root`` inspection of a legitimately
+    ref-free tree must still be able to report zero without erroring."""
     unresolved: list[RefFinding] = []
     wrapped: list[RefFinding] = []
     checked = 0
