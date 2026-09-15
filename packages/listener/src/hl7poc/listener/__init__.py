@@ -174,7 +174,9 @@ async def process_frame(
     """
     file = _spool_path(spool_dir)
     try:
-        file.write_text(raw, encoding="utf-8")  # durable first
+        # Bytes, not text: text mode translates outgoing LF to os.linesep,
+        # breaking the byte-exact round-trip a CRLF-terminated frame needs.
+        file.write_bytes(raw.encode("utf-8"))  # durable first
     except OSError as err:
         logger.error("spool write failed, NACKing: %s", err)
         return build_ack(_fallback_header(raw), "AE")
@@ -238,7 +240,9 @@ async def drain_spool(spool_dir: Path, rejected_dir: Path, forward: ForwardFn) -
     """Re-parse and forward every spooled frame. Re-parsed here, not cached,
     so a mapping bug never loses data -- the spool stays raw HL7."""
     for file in sorted(spool_dir.glob("*.hl7")):
-        raw = file.read_text(encoding="utf-8")
+        # Bytes, not text: universal newlines would turn every CR segment
+        # terminator into LF, collapsing the message into one MSH segment.
+        raw = file.read_bytes().decode("utf-8")
         try:
             message = parse_message(raw)
         except TransformError as err:

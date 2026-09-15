@@ -7,6 +7,7 @@ from hl7poc.listener import (
     VT,
     build_ack,
     build_service_bus_message,
+    drain_spool,
     extract_frames,
     process_frame,
 )
@@ -133,6 +134,35 @@ def test_bad_frame_gets_ae_and_is_rejected_not_forwarded(tmp_path) -> None:
     assert forwarded == []
     assert list(spool_dir.glob("*.hl7")) == []
     assert len(list(rejected_dir.glob("*.hl7"))) == 1
+
+
+def test_drain_spool_preserves_cr_segment_terminators(tmp_path) -> None:
+    spool_dir = tmp_path / "spool"
+    spool_dir.mkdir()
+    rejected_dir = spool_dir / "rejected"
+
+    async def discard(message, file) -> None:
+        """Leave the spool file in place so the drain has something to find."""
+
+    asyncio.run(
+        process_frame(
+            ADT_A01,
+            spool_dir=spool_dir,
+            rejected_dir=rejected_dir,
+            forward=discard,
+            tasks=set(),
+        )
+    )
+
+    drained: list[CanonicalMessage] = []
+
+    async def record(message, file) -> None:
+        drained.append(message)
+
+    asyncio.run(drain_spool(spool_dir, rejected_dir, record))
+
+    assert len(drained) == 1
+    assert drained[0].patient.mrn == "MRN123"
 
 
 def test_extract_frames_drops_unframed_junk() -> None:
