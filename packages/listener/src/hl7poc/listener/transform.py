@@ -22,8 +22,17 @@ from hl7poc.model import (
 )
 
 # Exceptions python-hl7 (or our own indexing into its containers) can raise
-# while walking a message that turns out to be shaped wrong.
-_MAPPING_ERRORS = (HL7Exception, KeyError, IndexError, AttributeError, ValueError)
+# while walking a message that turns out to be shaped wrong. python-hl7 0.4.5
+# raises a bare AssertionError (not one of its own HL7Exception subclasses)
+# for a malformed MSH-2 such as "^^^^", so it must be caught here too.
+_MAPPING_ERRORS = (
+    HL7Exception,
+    KeyError,
+    IndexError,
+    AttributeError,
+    ValueError,
+    AssertionError,
+)
 
 
 class TransformError(ValueError):

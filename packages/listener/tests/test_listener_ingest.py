@@ -20,6 +20,12 @@ ADT_A01 = (
 
 BAD_FRAME = "GARBAGE NOT HL7\r"
 
+# python-hl7 0.4.5 raises a bare AssertionError for this malformed MSH-2.
+BAD_MSH2_FRAME = (
+    "MSH|^^^^|SND|FAC|RCV|FAC2|20240101120000||ADT^A01|MSG004|P|2.5\r"
+    "PID|1||MRN126^^^HOSP^MR||Doe^Jane\r"
+)
+
 
 def _framed(raw: str, *, trailing_cr: bool = True) -> bytes:
     tail = FS + CR if trailing_cr else FS
@@ -136,6 +142,35 @@ def test_bad_frame_gets_ae_and_is_rejected_not_forwarded(tmp_path) -> None:
     assert len(list(rejected_dir.glob("*.hl7"))) == 1
 
 
+def test_bare_assertion_error_from_python_hl7_gets_ae_and_is_rejected(tmp_path) -> None:
+    """A malformed MSH-2 makes python-hl7 raise a bare AssertionError, which
+    must be mapped to TransformError like any other unmappable frame -- not
+    escape process_frame uncaught."""
+    spool_dir = tmp_path / "spool"
+    spool_dir.mkdir()
+    rejected_dir = spool_dir / "rejected"
+    forwarded: list[object] = []
+
+    async def stub_forward(message, file) -> None:
+        forwarded.append(message)
+
+    async def run() -> str:
+        return await process_frame(
+            BAD_MSH2_FRAME,
+            spool_dir=spool_dir,
+            rejected_dir=rejected_dir,
+            forward=stub_forward,
+            tasks=set(),
+        )
+
+    ack = asyncio.run(run())
+
+    assert "MSA|AE|" in ack
+    assert forwarded == []
+    assert list(spool_dir.glob("*.hl7")) == []
+    assert len(list(rejected_dir.glob("*.hl7"))) == 1
+
+
 def test_drain_spool_preserves_cr_segment_terminators(tmp_path) -> None:
     spool_dir = tmp_path / "spool"
     spool_dir.mkdir()
@@ -163,6 +198,40 @@ def test_drain_spool_preserves_cr_segment_terminators(tmp_path) -> None:
 
     assert len(drained) == 1
     assert drained[0].patient.mrn == "MRN123"
+
+
+def test_drain_spool_poison_file_does_not_stop_later_files(tmp_path) -> None:
+    """One unmappable spooled frame must not abort the whole drain pass --
+    every later file in the same pass still drains."""
+    spool_dir = tmp_path / "spool"
+    spool_dir.mkdir()
+    rejected_dir = spool_dir / "rejected"
+
+    async def discard(message, file) -> None:
+        """Leave the spool file in place so the drain has something to find."""
+
+    # Spool a poison frame first (sorts before the good one by filename).
+    (spool_dir / "0_poison.hl7").write_bytes(BAD_MSH2_FRAME.encode())
+    asyncio.run(
+        process_frame(
+            ADT_A01,
+            spool_dir=spool_dir,
+            rejected_dir=rejected_dir,
+            forward=discard,
+            tasks=set(),
+        )
+    )
+
+    drained: list[CanonicalMessage] = []
+
+    async def record(message, file) -> None:
+        drained.append(message)
+
+    asyncio.run(drain_spool(spool_dir, rejected_dir, record))
+
+    assert len(drained) == 1
+    assert drained[0].patient.mrn == "MRN123"
+    assert len(list(rejected_dir.glob("*.hl7"))) == 1
 
 
 def test_extract_frames_drops_unframed_junk() -> None:
