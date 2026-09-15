@@ -140,31 +140,29 @@ def test_drain_spool_preserves_cr_segment_terminators(tmp_path) -> None:
     spool_dir = tmp_path / "spool"
     spool_dir.mkdir()
     rejected_dir = spool_dir / "rejected"
-    forwarded: list[CanonicalMessage] = []
 
-    async def stub_forward(message, file) -> None:
-        forwarded.append(message)
+    async def discard(message, file) -> None:
+        """Leave the spool file in place so the drain has something to find."""
 
-    async def run() -> None:
-        # process_frame schedules the live-path forward as a background task
-        # rather than awaiting it -- await it explicitly so it can't also
-        # land in `forwarded` after being cleared below.
-        tasks: set[asyncio.Task] = set()
-        await process_frame(
+    asyncio.run(
+        process_frame(
             ADT_A01,
             spool_dir=spool_dir,
             rejected_dir=rejected_dir,
-            forward=stub_forward,
-            tasks=tasks,
+            forward=discard,
+            tasks=set(),
         )
-        await asyncio.gather(*tasks)
-        forwarded.clear()  # drop the live-path forward; only the drain counts
-        await drain_spool(spool_dir, rejected_dir, stub_forward)
+    )
 
-    asyncio.run(run())
+    drained: list[CanonicalMessage] = []
 
-    assert len(forwarded) == 1
-    assert forwarded[0].patient.mrn == "MRN123"
+    async def record(message, file) -> None:
+        drained.append(message)
+
+    asyncio.run(drain_spool(spool_dir, rejected_dir, record))
+
+    assert len(drained) == 1
+    assert drained[0].patient.mrn == "MRN123"
 
 
 def test_extract_frames_drops_unframed_junk() -> None:
