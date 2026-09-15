@@ -1,4 +1,4 @@
-"""HL7 v2 -> hl7poc.model.CanonicalMessage mapping.
+"""HL7 v2 -> :class:`hl7poc.model.CanonicalMessage` mapping.
 
 python-hl7 (the "hl7" PyPI package) is a listener-only dependency -- see
 docs/canonical-model.md. Never import it from hl7poc.model or anywhere the

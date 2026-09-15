@@ -24,9 +24,11 @@ from conftest import REPO_ROOT, load_module_from_path
 SCRIPT = REPO_ROOT / "scripts" / "check_docstring_refs.py"
 
 # Assembled from pieces, never written as one literal: ``tests/`` is itself a
-# scan root, so an intact role in this file's own source is a dangling ref the
-# gate reports against its own test suite.
-_DANGLING_ROLE = ":func:" + "`harness.does_not_exist.at_all`"
+# scan root, so an intact role in this file's own source is a dangling --
+# or extra-counted -- ref the gate reports against its own test suite.
+_DANGLING_ROLE = ":func:" + "`hl7poc.does_not_exist.at_all`"
+_INTACT_ROLE = ":class:" + "`hl7poc.model.ModelError`"
+_MOD_ROLE = ":mod:" + "`hl7poc.model`"
 
 check_docstring_refs = load_module_from_path("check_docstring_refs", SCRIPT)
 
@@ -114,11 +116,64 @@ def test_workspace_layout_files_are_actually_scanned(tmp_path: Path) -> None:
     _touch(repo, "packages/core/src/hl7poc_core/mod.py", module)
     _touch(repo, "packages/core/tests/test_mod.py", module)
 
-    unresolved, wrapped = check_docstring_refs.check(repo)
+    unresolved, wrapped, checked = check_docstring_refs.check(repo)
 
     assert not wrapped
+    assert checked == 2
     assert {str(f.path.relative_to(repo)) for f in unresolved} == {
         "packages/core/src/hl7poc_core/mod.py",
         "packages/core/tests/test_mod.py",
     }
-    assert {f.ref for f in unresolved} == {"harness.does_not_exist.at_all"}
+    assert {f.ref for f in unresolved} == {"hl7poc.does_not_exist.at_all"}
+
+
+def test_dangling_reference_is_reported_and_intact_one_is_not(
+    tmp_path: Path,
+) -> None:
+    """A dangling ``hl7poc.*`` role is reported; an intact one naming a real
+    symbol in this checkout is not -- resolved against THIS repo's own
+    ``hl7poc`` package via ``sys.path``, not a throwaway tree, so the test
+    exercises ``resolve_ref`` against real imports."""
+    repo = tmp_path / "resolve_e2e"
+    _init_repo(repo)
+    module = f'"""Module.\n\n{_DANGLING_ROLE}\n\n{_INTACT_ROLE}\n"""\n'
+    _touch(repo, "packages/core/src/hl7poc_core/mod.py", module)
+
+    unresolved, wrapped, checked = check_docstring_refs.check(repo)
+
+    assert not wrapped
+    assert checked == 2
+    assert {f.ref for f in unresolved} == {"hl7poc.does_not_exist.at_all"}
+
+
+def test_checked_count_pins_n_resolvable_references(tmp_path: Path) -> None:
+    """A tree with N resolvable ``hl7poc.*`` refs reports ``checked == N``,
+    with zero unresolved -- pins the success-path count, not just that
+    resolution passes."""
+    repo = tmp_path / "count_n"
+    _init_repo(repo)
+    module = f'"""Module.\n\n{_INTACT_ROLE}\n\n{_MOD_ROLE}\n"""\n'
+    _touch(repo, "packages/core/src/hl7poc_core/mod.py", module)
+
+    unresolved, wrapped, checked = check_docstring_refs.check(repo)
+
+    assert not wrapped
+    assert not unresolved
+    assert checked == 2
+
+
+def test_checked_count_is_zero_and_distinguishable_when_no_refs(
+    tmp_path: Path,
+) -> None:
+    """A tree with no ``hl7poc.*`` roles at all reports ``checked == 0`` --
+    distinguishable from the N-checked case above, which is the whole point
+    of returning a count instead of a bare pass/fail."""
+    repo = tmp_path / "count_zero"
+    _init_repo(repo)
+    _touch(repo, "packages/core/src/hl7poc_core/mod.py", '"""No refs here."""\n')
+
+    unresolved, wrapped, checked = check_docstring_refs.check(repo)
+
+    assert not wrapped
+    assert not unresolved
+    assert checked == 0
