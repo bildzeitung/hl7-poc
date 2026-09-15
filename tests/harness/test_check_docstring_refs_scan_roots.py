@@ -24,12 +24,11 @@ from conftest import REPO_ROOT, load_module_from_path
 
 SCRIPT = REPO_ROOT / "scripts" / "check_docstring_refs.py"
 
-# Assembled from pieces, never written as one literal: ``tests/`` is itself a
-# scan root, so an intact role in this file's own source is a dangling --
-# or extra-counted -- ref the gate reports against its own test suite.
-_DANGLING_ROLE = ":func:" + "`hl7poc.does_not_exist.at_all`"
-_INTACT_ROLE = ":class:" + "`hl7poc.model.ModelError`"
-_MOD_ROLE = ":mod:" + "`hl7poc.model`"
+# Safe as plain literals: ``tests/harness`` is carved out of the ``tests``
+# scan root, so a role written intact here is never scanned as API prose.
+_DANGLING_ROLE = ":func:`hl7poc.does_not_exist.at_all`"
+_INTACT_ROLE = ":class:`hl7poc.model.ModelError`"
+_MOD_ROLE = ":mod:`hl7poc.model`"
 
 check_docstring_refs = load_module_from_path("check_docstring_refs", SCRIPT)
 
@@ -210,12 +209,13 @@ def test_cli_reports_the_count_on_the_success_line(tmp_path: Path) -> None:
 
 
 def test_tracked_python_files_excludes_tests_harness(tmp_path: Path) -> None:
-    """``tests/harness`` is carved out of the ``tests`` scan root (hl7-poc-
-    psk): its fixtures write Sphinx roles as literal text on purpose to
-    exercise this gate, so scanning them as real API prose is a false
-    positive by construction. A plain, intact role here would prove the
-    exclusion works without the split-literal dance this file's own
-    fixtures still need for the roots that ARE scanned."""
+    """``tests/harness`` is carved out of the ``tests`` scan root: its
+    fixtures write Sphinx roles as literal text on purpose to exercise this
+    gate, so scanning them as real API prose is a false positive by
+    construction. The sibling ``tests/`` file pins that the carve-out is
+    the harness subdirectory only, not the whole root. This file's own role
+    constants are plain literals only because the carve-out holds, so this
+    test guards them too."""
     repo = tmp_path / "harness_excluded"
     _init_repo(repo)
     _touch(repo, "tests/test_mod.py", '"""No refs here."""\n')

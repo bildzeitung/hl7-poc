@@ -161,8 +161,6 @@ def _tracked_python_files(root: Path) -> list[Path]:
     existing_dirs = _scan_roots(root)
     if not existing_dirs:
         return []
-    # The exclude pathspec must precede the include pathspecs -- git
-    # silently returns zero files (no error) if it comes after them.
     out = subprocess.run(
         [
             "git",
