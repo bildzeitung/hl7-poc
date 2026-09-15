@@ -18,8 +18,8 @@ example, and scripts/validate-mermaid.sh the shell-side reference.
 
 Replace the bodies with your project's real tooling; keep the NAMES and the `fix`
 tag, since the agent files invoke `nox -t fix`, `nox -s tests`,
-`nox -s harness_tests`, `nox -s lock_currency` and `nox -s shellcheck` by those
-exact handles.
+`nox -s harness_tests`, `nox -s lock_currency`, `nox -s shellcheck` and
+`nox -s build_members` by those exact handles.
 
 Two test sessions, two audiences. `tests` is YOUR suite: it runs on every gate
 and ignores tests/harness/. `harness_tests` is the harness's own suite under
@@ -35,6 +35,7 @@ import os
 import shutil
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 import nox
@@ -117,6 +118,31 @@ def tests(session: nox.Session) -> None:
     yet, and the gates must be green before the first one is written.
     """
     _run_partitioned(session, "--ignore=tests/harness", empty_ok=True)
+
+
+#: Workspace member distribution names, as declared by each packages/*/pyproject.toml's
+#: [project] name -- not directory names, since `uv build --package` takes the dist name.
+WORKSPACE_MEMBERS = ("hl7poc-core", "hl7poc-listener", "hl7poc-worker")
+
+
+@nox.session
+def build_members(session: nox.Session) -> None:
+    """Actually BUILD each workspace member's wheel/sdist with `uv build`.
+
+    `nox -s tests` cannot catch a packaging misconfiguration (e.g. a
+    [tool.uv.build-backend] module-name naming a file instead of a package
+    directory): `uv sync` installs every workspace member editable, so tests
+    import straight off packages/*/src regardless of what a real build would
+    produce. This session builds each member for real, into a throwaway temp
+    dir that is always removed -- never into the repo.
+    """
+    uv = shutil.which("uv")
+    if uv is None:
+        session.log("build_members: 'uv' is not on PATH -- install uv and re-run")
+        sys.exit(2)
+    with tempfile.TemporaryDirectory(prefix="nox-build-members-") as tmp:
+        for member in WORKSPACE_MEMBERS:
+            session.run(uv, "build", "--package", member, "-o", tmp, external=True)
 
 
 @nox.session
