@@ -3,9 +3,9 @@
 # /land's isolation replay: on a RED combined re-gate, replay the accepted set
 # one branch at a time, re-gating after each, to attribute the red to a branch.
 #
-# RESUMABLE BY DESIGN. Per branch this runs four gate sessions (fix, tests,
-# harness-tests-gate, lock_currency), plus four baseline runs before the loop
-# -- `4 + 4N` gate invocations, though the harness gate answers in constant
+# RESUMABLE BY DESIGN. Per branch this runs five gate sessions (fix, tests,
+# harness-tests-gate, build_members, lock_currency), plus five baseline runs
+# before the loop -- `5 + 5N` gate invocations, though the harness gate answers in constant
 # time unless the branch touched a harness path (see that script). A single Bash
 # tool call is capped at 600s and the harness forbids backgrounding a gate, so a
 # straight-through loop hits that ceiling at a modest queue size, mid-loop. The
@@ -294,10 +294,11 @@ for id in $(cat "$ACCEPTED"); do
   esac
 
   g0="$(date +%s)"
-  run_gate fix;     fix_rc=$?
-  run_gate tests;   tests_rc=$?
-  run_gate harness; harness_rc=$?   # constant-time skip unless this branch touched the harness
-  run_gate build;   build_rc=$?
+  # The harness gate is a constant-time skip unless this branch touched a
+  # harness path. `lock` is absent on purpose: it runs further down, after the
+  # fix session's reformat has been amended into the merge commit.
+  gate_rcs=()
+  for g in fix tests harness build; do run_gate "$g"; gate_rcs+=("$?"); done
   EST=$(( $(date +%s) - g0 )); [ "$EST" -lt 5 ] && EST=5
   state_set est "$EST"
 
@@ -306,10 +307,13 @@ for id in $(cat "$ACCEPTED"); do
   # build_members' own exit 2 for a missing `uv` -- is the MACHINE, not this
   # branch: stop the whole replay rather than back out and bounce an innocent
   # branch on a bootstrap gap. The merge is left in place because its fate is
-  # unknown, not judged.
-  for rc in "$fix_rc" "$tests_rc" "$harness_rc" "$build_rc"; do
+  # unknown, not judged. Every rc is classified before any verdict is acted on,
+  # so a machine fault anywhere outranks a red gate earlier in the list.
+  culprit=0
+  for rc in "${gate_rcs[@]}"; do
     case "$rc" in
-      0|1) ;;
+      0) ;;
+      1) culprit=1 ;;
       *)
         echo "GATE COULD NOT RUN: a gate exited $rc on '$id' -- exit 1 is the only content" >&2
         echo "verdict; a 127/126/signal here is a machine fault, never a CULPRIT. Stopping." >&2
@@ -317,7 +321,7 @@ for id in $(cat "$ACCEPTED"); do
         ;;
     esac
   done
-  if [ "$fix_rc" -eq 1 ] || [ "$tests_rc" -eq 1 ] || [ "$harness_rc" -eq 1 ] || [ "$build_rc" -eq 1 ]; then
+  if [ "$culprit" -eq 1 ]; then
     git reset --hard HEAD~1 >/dev/null || exit 2   # back the culprit out
     mark_done "$id"
     printf 'CULPRIT\t%s\n' "$id"

@@ -21,6 +21,7 @@ import shutil
 import subprocess
 from pathlib import Path
 
+import pytest
 from conftest import REPO_ROOT
 
 
@@ -170,12 +171,17 @@ def test_baseline_red_is_never_attributed_to_a_branch(tmp_path: Path) -> None:
     assert st["landed"].read_text() == ""
 
 
-def test_a_culprit_is_backed_out_and_reported_not_bounced(tmp_path: Path) -> None:
+@pytest.mark.parametrize("red_phase", ["fix", "tests", "harness", "build"])
+def test_a_culprit_is_backed_out_and_reported_not_bounced(
+    tmp_path: Path, red_phase: str
+) -> None:
+    """Every phase is pinned separately: a gate the per-branch loop forgets to
+    invoke, or whose rc it drops, would let a red one through as a SURVIVOR."""
     repo = _repo(tmp_path)
     _land_branch(repo, "good", "good.txt", "g")
     _land_branch(repo, "bad", "bad.txt", "b")
     st = _state(repo, "good", "bad")
-    r = _replay(repo, st, _stub(repo, red_when_present="bad.txt"))
+    r = _replay(repo, st, _stub(repo, red_when_present="bad.txt", red_phase=red_phase))
     assert r.returncode == 1, f"{r.stdout}\n{r.stderr}"
     assert ("SURVIVOR", "good") in _records(r)
     assert ("CULPRIT", "bad") in _records(r)
@@ -184,22 +190,6 @@ def test_a_culprit_is_backed_out_and_reported_not_bounced(tmp_path: Path) -> Non
     )
     assert (repo / "good.txt").exists(), "the survivor stays merged"
     assert not (repo / "bad.txt").exists(), "the culprit must be backed out of the tree"
-
-
-def test_build_members_red_is_a_culprit_not_ignored(tmp_path: Path) -> None:
-    """Pins that the per-branch loop actually invokes the `build` gate (nox -s
-    build_members) -- a red there must be attributed exactly like fix/tests/
-    harness, not silently passed through."""
-    repo = _repo(tmp_path)
-    _land_branch(repo, "good", "good.txt", "g")
-    _land_branch(repo, "bad", "bad.txt", "b")
-    st = _state(repo, "good", "bad")
-    r = _replay(repo, st, _stub(repo, red_when_present="bad.txt", red_phase="build"))
-    assert r.returncode == 1, f"{r.stdout}\n{r.stderr}"
-    assert ("SURVIVOR", "good") in _records(r)
-    assert ("CULPRIT", "bad") in _records(r)
-    assert st["landed"].read_text() == "good\n"
-    assert not (repo / "bad.txt").exists()
 
 
 def test_resume_after_a_culprit_does_not_remerge_it(tmp_path: Path) -> None:

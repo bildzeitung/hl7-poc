@@ -95,8 +95,8 @@
 #      nox -s build_members && nox -s lock_currency`, plus `validate-mermaid.sh`
 #      on a docs change), which runs once, between the merge loop and the
 #      isolation-replay loop. MEASURED on the 2026-07-28 dev machine at ~60s
-#      total (tests ~50s, fix ~0.4s, lock_currency ~1s, mermaid ~10s, before
-#      build_members was wired in) -- comfortably small, but it is
+#      total (tests ~50s, fix ~0.4s, lock_currency ~1s, mermaid ~10s); the
+#      figure excludes build_members -- comfortably small, but it is
 #      wall-clock on one machine, not a bound. Unlike the two gaps an earlier fix
 #      closed, this one does NOT grow with the size of the `ready-for-land`
 #      queue -- it runs exactly once per pass regardless of how many tickets
