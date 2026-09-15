@@ -29,12 +29,12 @@ Fixed values carried over from the reference implementations, not exposed as env
 
 | Constant | Value | Where it applies |
 |---|---|---|
-| Spool retry / drain interval | 5s | Listener: how often the retry loop re-probes Service Bus and re-drains the spool. |
+| Spool retry / drain interval | 5s | Listener: how often the retry loop re-drains the spool. |
 | Shutdown drain budget | 8s | Listener: time budget on `SIGTERM`/`SIGINT` to drain the spool before exiting. |
 | Worker shutdown budget | 30s | Worker: time budget on `SIGTERM`/`SIGINT` to finish the in-flight session before exiting. |
 | Session idle wait | 5s | Worker: how long the pump waits for `NEXT_AVAILABLE_SESSION` before looping. |
 | Lock renewal max | 300s | Worker: `AutoLockRenewer`'s maximum lock renewal duration for a session. |
-| Probe read timeout | 3s | Both: timeout for a probe HTTP handler read. |
+| Probe read timeout | 3s | Both: timeout for a probe HTTP handler read; defined once as `hl7poc.probe.READ_TIMEOUT`. |
 | Webhook timeout | 5s | Worker: timeout for a webhook POST when `WEBHOOK_URL` is set. |
 
 ## Python and image tags

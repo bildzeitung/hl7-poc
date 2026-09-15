@@ -136,19 +136,6 @@ class _StubMessage:
         self.message_id = message_id
 
 
-def test_handle_completes_probe_without_deciding() -> None:
-    receiver = _StubReceiver()
-    # An empty, non-JSON body: if handle() fell through to decide() instead of
-    # returning early on the PROBE check, from_json would reject it and the
-    # message would be dead-lettered instead of completed.
-    msg = _StubMessage(b"", props={"msgType": "PROBE"})
-
-    asyncio.run(handle(receiver, msg, ""))
-
-    assert receiver.completed == [msg]
-    assert receiver.dead_lettered == []
-
-
 def test_handle_payload_pushes_and_completes(capsys) -> None:
     receiver = _StubReceiver()
     model = _model("SIU", "S12", appointment_start="20260920090000")
