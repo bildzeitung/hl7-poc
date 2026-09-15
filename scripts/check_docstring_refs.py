@@ -150,12 +150,27 @@ def _tracked_python_files(root: Path) -> list[Path]:
     ``_scan_roots``) -- sourced from ``git ls-files``, like
     ``check_links.py``'s own walk, so scratch or gitignored files never
     enter this gate. (The pathspec scoping is this gate's own:
-    ``check_links.py`` dropped its pathspecs once its walk went repo-wide.)"""
+    ``check_links.py`` dropped its pathspecs once its walk went repo-wide.)
+
+    ``tests/harness`` is excluded even though it sits under the ``tests``
+    scan root: the rest of the repo treats it as harness code, not project
+    source (``nox -s tests`` ignores it; it only reaches CI via
+    ``scripts/harness-tests-gate.sh``), and its fixtures write Sphinx roles
+    as literal text on purpose to exercise this very gate -- scanning them
+    as real API prose is a false positive by construction."""
     existing_dirs = _scan_roots(root)
     if not existing_dirs:
         return []
     out = subprocess.run(
-        ["git", "-C", str(root), "ls-files", "--", *existing_dirs],
+        [
+            "git",
+            "-C",
+            str(root),
+            "ls-files",
+            "--",
+            ":(exclude)tests/harness",
+            *existing_dirs,
+        ],
         capture_output=True,
         text=True,
         check=True,
