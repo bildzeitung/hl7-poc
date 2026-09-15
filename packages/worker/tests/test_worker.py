@@ -6,6 +6,7 @@ from typing import Self
 
 import pytest
 from azure.servicebus.exceptions import ServiceBusError
+
 from hl7poc.model import (
     Appointment,
     CanonicalMessage,

@@ -28,3 +28,7 @@ dev = [
 [tool.ruff]
 line-length = 88
 target-version = "py314"
+# Must name the members' source dirs explicitly: no ancestor of
+# packages/*/src/hl7poc is a ruff src root, so on the default
+# src = ['.', 'src'] ruff misclassifies hl7poc.* as third-party.
+src = ["packages/*/src"]
