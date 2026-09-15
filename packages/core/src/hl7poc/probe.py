@@ -16,8 +16,8 @@ ReadyFn = Callable[[], tuple[bool, dict]]
 
 
 async def handle_http(
-    reader,
-    writer,
+    reader: asyncio.StreamReader,
+    writer: asyncio.StreamWriter,
     *,
     ready: ReadyFn | None = None,
 ) -> None:
