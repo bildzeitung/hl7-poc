@@ -22,9 +22,11 @@ from hl7poc.model import (
 )
 
 # Exceptions python-hl7 (or our own indexing into its containers) can raise
-# while walking a message that turns out to be shaped wrong. python-hl7 0.4.5
-# raises a bare AssertionError (not one of its own HL7Exception subclasses)
-# for a malformed MSH-2 such as "^^^^", so it must be caught here too.
+# while walking a message that turns out to be shaped wrong. AssertionError is
+# in the list because python-hl7 0.4.5 guards its own parser and container
+# internals with bare asserts rather than HL7Exception, so malformed input --
+# an MSH-2 of "^^^^", say -- surfaces as AssertionError and would otherwise
+# escape every "except TransformError" in the ingest path.
 _MAPPING_ERRORS = (
     HL7Exception,
     KeyError,

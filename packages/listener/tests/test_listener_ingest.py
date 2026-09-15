@@ -1,6 +1,8 @@
 import asyncio
 import json
 
+import pytest
+
 from hl7poc.listener import (
     CR,
     FS,
@@ -20,11 +22,9 @@ ADT_A01 = (
 
 BAD_FRAME = "GARBAGE NOT HL7\r"
 
-# python-hl7 0.4.5 raises a bare AssertionError for this malformed MSH-2.
-BAD_MSH2_FRAME = (
-    "MSH|^^^^|SND|FAC|RCV|FAC2|20240101120000||ADT^A01|MSG004|P|2.5\r"
-    "PID|1||MRN126^^^HOSP^MR||Doe^Jane\r"
-)
+# python-hl7 0.4.5 fails an internal sanity assert on this MSH-2, so parsing
+# never reaches a second segment -- the MSH alone is the whole reproducer.
+BAD_MSH2_FRAME = "MSH|^^^^|SND|FAC|RCV|FAC2|20240101120000||ADT^A01|MSG004|P|2.5\r"
 
 
 def _framed(raw: str, *, trailing_cr: bool = True) -> bytes:
@@ -116,7 +116,14 @@ def test_good_frame_gets_aa_and_forwards_model_json(tmp_path) -> None:
     assert file.exists()
 
 
-def test_bad_frame_gets_ae_and_is_rejected_not_forwarded(tmp_path) -> None:
+@pytest.mark.parametrize(
+    "frame",
+    [BAD_FRAME, BAD_MSH2_FRAME],
+    ids=["not-hl7", "malformed-msh2"],
+)
+def test_bad_frame_gets_ae_and_is_rejected_not_forwarded(frame, tmp_path) -> None:
+    # malformed-msh2 covers the bare AssertionError python-hl7 raises rather
+    # than an HL7Exception: it must NACK and reject like any unmappable frame.
     spool_dir = tmp_path / "spool"
     spool_dir.mkdir()
     rejected_dir = spool_dir / "rejected"
@@ -127,36 +134,7 @@ def test_bad_frame_gets_ae_and_is_rejected_not_forwarded(tmp_path) -> None:
 
     async def run() -> str:
         return await process_frame(
-            BAD_FRAME,
-            spool_dir=spool_dir,
-            rejected_dir=rejected_dir,
-            forward=stub_forward,
-            tasks=set(),
-        )
-
-    ack = asyncio.run(run())
-
-    assert "MSA|AE|" in ack
-    assert forwarded == []
-    assert list(spool_dir.glob("*.hl7")) == []
-    assert len(list(rejected_dir.glob("*.hl7"))) == 1
-
-
-def test_bare_assertion_error_from_python_hl7_gets_ae_and_is_rejected(tmp_path) -> None:
-    """A malformed MSH-2 makes python-hl7 raise a bare AssertionError, which
-    must be mapped to TransformError like any other unmappable frame -- not
-    escape process_frame uncaught."""
-    spool_dir = tmp_path / "spool"
-    spool_dir.mkdir()
-    rejected_dir = spool_dir / "rejected"
-    forwarded: list[object] = []
-
-    async def stub_forward(message, file) -> None:
-        forwarded.append(message)
-
-    async def run() -> str:
-        return await process_frame(
-            BAD_MSH2_FRAME,
+            frame,
             spool_dir=spool_dir,
             rejected_dir=rejected_dir,
             forward=stub_forward,
@@ -207,20 +185,11 @@ def test_drain_spool_poison_file_does_not_stop_later_files(tmp_path) -> None:
     spool_dir.mkdir()
     rejected_dir = spool_dir / "rejected"
 
-    async def discard(message, file) -> None:
-        """Leave the spool file in place so the drain has something to find."""
-
-    # Spool a poison frame first (sorts before the good one by filename).
+    # drain_spool walks sorted(glob("*.hl7")), so these names put the poison
+    # frame ahead of the good one -- the good one only drains if the poison
+    # frame did not abort the loop.
     (spool_dir / "0_poison.hl7").write_bytes(BAD_MSH2_FRAME.encode())
-    asyncio.run(
-        process_frame(
-            ADT_A01,
-            spool_dir=spool_dir,
-            rejected_dir=rejected_dir,
-            forward=discard,
-            tasks=set(),
-        )
-    )
+    (spool_dir / "1_good.hl7").write_bytes(ADT_A01.encode())
 
     drained: list[CanonicalMessage] = []
 
