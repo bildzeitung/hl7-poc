@@ -27,4 +27,4 @@ dev = [
 # file, and the shipped tests/ are formatted at this width.
 [tool.ruff]
 line-length = 88
-target-version = "py311"
+target-version = "py314"
