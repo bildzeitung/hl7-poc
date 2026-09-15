@@ -238,7 +238,10 @@ async def drain_spool(spool_dir: Path, rejected_dir: Path, forward: ForwardFn) -
     """Re-parse and forward every spooled frame. Re-parsed here, not cached,
     so a mapping bug never loses data -- the spool stays raw HL7."""
     for file in sorted(spool_dir.glob("*.hl7")):
-        raw = file.read_text(encoding="utf-8")
+        # read_bytes(), not read_text(): text mode applies universal newlines
+        # and turns every HL7 CR segment terminator into LF, collapsing the
+        # message to one segment.
+        raw = file.read_bytes().decode("utf-8")
         try:
             message = parse_message(raw)
         except TransformError as err:
