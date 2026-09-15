@@ -57,9 +57,8 @@ FAILURE (exit 1) here, not just a loud line: a checkout where the scan roots
 resolve but nothing under them cites an ``hl7poc.*`` symbol is a green-over-
 zero regression this gate must not let past silently.
 
-``docs/decisions.md``'s own append-only exemption from pointer sweeps does
-not interact with this gate at all: this gate only ever reads Python source
-under the roots ``_scan_roots`` derives, never ``docs/`` prose.
+This gate only ever reads Python source under the roots ``_scan_roots``
+derives; it never reads ``docs/`` prose, so nothing there can trip it.
 
 Usage::
 
