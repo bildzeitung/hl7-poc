@@ -5,12 +5,12 @@ build-backend = "uv_build"
 [project]
 name = "hl7poc-listener"
 version = "0.0.0"
-requires-python = ">=3.11"
+requires-python = ">=3.14"
 dependencies = [
   "hl7poc-core",
   "azure-servicebus>=7.12",
   "typer>=0.12",
-  "hl7>=0.4",
+  "hl7>=0.4.5",
 ]
 
 [project.scripts]

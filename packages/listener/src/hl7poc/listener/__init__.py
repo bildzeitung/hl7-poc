@@ -224,7 +224,7 @@ async def handle_mllp(
                 )
                 writer.write(VT + ack.encode() + FS + CR)
                 await writer.drain()
-    except (ConnectionResetError, asyncio.IncompleteReadError):
+    except ConnectionResetError, asyncio.IncompleteReadError:
         pass
     finally:
         writer.close()
