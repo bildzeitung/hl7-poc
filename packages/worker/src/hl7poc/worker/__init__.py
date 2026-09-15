@@ -28,6 +28,7 @@ import typer
 from azure.servicebus import NEXT_AVAILABLE_SESSION
 from azure.servicebus.aio import AutoLockRenewer, ServiceBusClient
 from azure.servicebus.exceptions import OperationTimeoutError, ServiceBusError
+
 from hl7poc.model import CanonicalMessage
 
 app = typer.Typer(add_completion=False)

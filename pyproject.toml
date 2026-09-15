@@ -28,3 +28,7 @@ dev = [
 [tool.ruff]
 line-length = 88
 target-version = "py314"
+# src glob points ruff at the workspace members' source dirs post-hl7-poc-ouc
+# split, so it classifies hl7poc.* as first-party (default src = ['.', 'src']
+# no longer contains it) and detect-same-package stays meaningful.
+src = ["packages/*/src"]
