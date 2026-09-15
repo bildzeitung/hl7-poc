@@ -99,6 +99,15 @@ live once, in `packages/core/src/hl7poc/probe.py`, parameterised by an optional 
 so the worker (no `/ready`) and the listener (`/ready` per the decision above) share one
 implementation instead of two independently-drifting copies.
 
+**2026-09-15 — Where `nox -s build_members` runs (`hl7-poc-adr`).** `build_members` (added by
+`hl7-poc-y90`) runs in `/land`'s combined re-gate and in `scripts/land-replay.sh`'s per-branch
+isolation replay — both the baseline and the per-branch loop — so a red combined pass can be
+attributed to the same gate set the replay re-checks. It also runs in `scripts/update-deps.sh`,
+since a lock bump can change what a build resolves. It deliberately does **not** run in the
+`coding` producer's or `code-reviewer`'s per-branch gates (same treatment `lock_currency` already
+gets there): those gates catch it earlier only at the cost of one real build per branch, and
+`/land`'s single combined pass already catches it before anything reaches `main`.
+
 ## Deferred, not forgotten
 
 Decisions this project has deliberately not made yet. Each stays open until a ticket revisits it.

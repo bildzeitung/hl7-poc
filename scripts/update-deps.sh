@@ -24,8 +24,10 @@
 #      nothing. Otherwise `uv sync` brings ./.venv to the candidate lock
 #      EXACTLY -- uv removes anything the lock no longer names, so there is
 #      never a half-migrated venv to reason about.
-#   4. Run the gates: `uv run --frozen nox -t fix`, `uv run --frozen nox -s tests`.
-#   5. GREEN (sync AND both gates pass) -> the candidate stays as uv.lock. This
+#   4. Run the gates: `uv run --frozen nox -t fix`, `uv run --frozen nox -s tests`,
+#      `uv run --frozen nox -s build_members` -- a lock bump can change what a
+#      build resolves, which `tests` (editable installs) cannot catch.
+#   5. GREEN (sync AND all three gates pass) -> the candidate stays as uv.lock. This
 #      script never commits -- review (`git diff -- uv.lock`) and commit it
 #      yourself. ANY OTHER FAILURE -- the sync itself (an uninstallable pin, a
 #      yanked release, a network blip) just as much as a red nox gate --
@@ -203,11 +205,13 @@ FAILED_AT=""
 if ! uv sync --frozen; then
   FAILED_AT="candidate sync (uv sync failed -- see output above)"
 else
-  echo "update-deps.sh: running gates (nox -t fix, nox -s tests)..."
+  echo "update-deps.sh: running gates (nox -t fix, nox -s tests, nox -s build_members)..."
   if ! uv run --frozen nox -t fix; then
     FAILED_AT="nox -t fix"
   elif ! uv run --frozen nox -s tests; then
     FAILED_AT="nox -s tests"
+  elif ! uv run --frozen nox -s build_members; then
+    FAILED_AT="nox -s build_members"
   fi
 fi
 
