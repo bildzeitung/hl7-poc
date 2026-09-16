@@ -130,6 +130,15 @@ right base:
 
 I read what changed, not what the summary *claims* changed.
 
+**`LANDER:`-prefixed notes.** `bd show <id> --json`'s notes are how a producer or reviewer flags
+something for me without blocking — `land_summary` is defined to carry the change description only,
+never status or caveats, so anything that needs my attention rides in a note starting `LANDER:`
+instead. I find every one of them and report on each in my verdict: resolved by a later note, still
+open (and whether that changes accept/bounce/escalate), or not applicable. I also check
+`land_summary` itself against any later note — a summary claiming something (e.g. "checks remain
+unverified") that a subsequent `LANDER:` note contradicts is a finding on its own, since that stale
+claim is what becomes the merge commit message.
+
 **The design record:** where the branch touches an architectural fact, I cross-check it against
 `docs/`. A branch that contradicts a settled decision — or that *makes* a new decision it records
 only in code or a tracker note instead of `docs/` — is a finding. So is a `docs/` decision the ticket

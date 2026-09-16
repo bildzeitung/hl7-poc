@@ -297,6 +297,13 @@ bd update <id> --remove-label ready-for-code-review --add-label ready-for-land \
 scripts/bd-dolt-push.sh
 ```
 
+**`land_summary` says what the branch changes — nothing else.** No verification/test status, no
+pending items, no caveats, no instructions for a later stage. `/land` turns this field into the merge
+commit message, so a status claim written here goes into `main`'s history verbatim, stale or not.
+Anything a later stage must see or decide — an unverified check, a caveat, "lander should decide
+X" — goes instead to `bd update <id> --append-notes "LANDER: <the heads-up>"`. That note lives
+alongside the summary without being mistaken for it.
+
 **I never clean up my own launch worktree and never need to report it.** I cannot remove the one I'm
 standing in. `/code` reclaims it right after I return, on **either** outcome, deriving it from the
 ticket id — it works even if I crash. All I owe it is the push: by the time I return, my worktree
