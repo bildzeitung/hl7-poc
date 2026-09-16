@@ -513,7 +513,7 @@ of the actual work. `/land`'s drift precheck reads `land_head`, which I just ref
 `land_summary` describes the change only — never status, caveats, or a hand-off item, since `/land`
 turns it into the merge commit message verbatim. If a rebase pickup surfaces something the lander or
 a later reviewer needs to know (a fresh conflict risk, something odd found while merging `main` in),
-it follows the `LANDER:`-prefixed `--append-notes` convention stated in step 9 above.
+it follows the `LANDER:`-prefixed `--append-notes` convention stated in the producer cycle's step 9 hand-off.
 
 **I do not remove the original build worktree** (never mine) **and I cannot remove my own** (I'm
 standing in it). `/code` reclaims mine right after I return, on **either** outcome, deriving it from
