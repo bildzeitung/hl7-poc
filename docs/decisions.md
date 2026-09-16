@@ -134,8 +134,7 @@ fails whole-hog and restores nothing the moment any single entry is unknown to g
 (e.g. `.beads/issues.jsonl` is never tracked here). The script loops, one `git checkout HEAD --
 <path>` per entry, so an unknown/untracked entry only no-ops for itself and the others still
 restore. This mirrors the per-entry `git restore` rule `scripts/land-merge-one.sh` already follows
-for the same list (see that script's own comment) — the same defect shape, fixed the same way in
-both consumers of this list.
+for the same list (see that script's own comment).
 
 ## Deferred, not forgotten
 

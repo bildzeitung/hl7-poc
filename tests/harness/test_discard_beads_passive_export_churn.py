@@ -1,24 +1,12 @@
 """Tests for scripts/discard-beads-passive-export-churn.sh (hl7-poc-1yh).
 
-The Stop hook runs this script to discard working-tree churn to the beads
-passive exports listed in `scripts/beads-passive-exports.txt`, by checking
-each one back out of HEAD. The script used to make ONE
-`git checkout HEAD -- "${paths[@]}"` call listing every entry at once.
-`git checkout` is atomic over its pathspecs: if any single listed path is
-unknown to git in this repo state (e.g. `.beads/issues.jsonl` is never
-tracked here), the WHOLE call fails with "pathspec ... did not match any
-file(s) known to git" and restores NOTHING -- silently, since the script
-swallows the error and always exits 0. `.beads/interactions.jsonl` -- which
-IS tracked and modified on every `bd` status change -- was never restored
-either, leaving the primary checkout dirty.
+`git checkout HEAD -- <paths...>` is atomic over its pathspecs: one call
+listing every entry of `scripts/beads-passive-exports.txt` restores NOTHING
+when any entry is unknown to git (`.beads/issues.jsonl` is never tracked
+here). The script must restore each entry with its own call, so a tracked,
+dirty `.beads/interactions.jsonl` is still restored. See docs/decisions.md.
 
-The fix loops, one `git checkout HEAD -- <path>` call per entry (mirroring
-`scripts/land-merge-one.sh`'s per-entry `git restore` loop, see that
-script's own comment and docs/decisions.md), so an unknown/untracked entry
-only no-ops for itself and the others still restore.
-
-All tests below run the ACTUAL script against a real git repository built in
-`tmp_path` -- no fake git, no mocked subprocess.
+Runs the real script against a real git repository in `tmp_path`.
 """
 
 from __future__ import annotations
