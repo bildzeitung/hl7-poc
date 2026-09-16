@@ -2,7 +2,8 @@ name: hl7-lab
 
 services:
   simhospital:
-    image: eu.gcr.io/simhospital-images/simhospital:latest
+    image: simhospital:latest      # built locally; no registry copy exists
+    pull_policy: never
     command:
       - health/simulator
       - -output=mllp
