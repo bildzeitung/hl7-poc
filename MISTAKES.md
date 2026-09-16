@@ -19,6 +19,21 @@ Entry shape (one `##` heading per entry, newest at the top):
 
 <!-- entries below, newest first -->
 
+## 2026-09-16 — Rebase pickups overwrote land_summary, so merges on main describe the rebase
+
+- **What happened:** the `coding` agent's needs-rebase pickup set
+  `land_summary="Merged main @ <sha> into the branch"`, and `/code`'s SKILL.md told it to refresh
+  `land_summary`. Merges e7d267c (hl7-poc-08v) and 0aae1c4 (hl7-poc-5fu) landed on `main` with
+  that text as their message (fixed by hl7-poc-dyy).
+- **Root cause:** the pickup treated `land_summary` as per-hand-off state to refresh alongside
+  `land_head`, when it is the code-reviewer's description of the work, which `/land` consumes
+  verbatim as the merge commit message.
+- **Consequence:** two pushed merge commits on `main` whose messages say nothing about the change;
+  not rewritten.
+- **Prevention rule:** a stage writes only the bd metadata it owns. A stage that does not change
+  what a branch *does* (rebase pickup) refreshes `land_head` only and never overwrites a summary
+  another stage authored for a downstream consumer.
+
 ## 2026-09-15 — Two tickets and a bounce spent fixing a checker no gate ever ran
 
 - **What happened:** `scripts/check_docstring_refs.py` was improved across a scan-root rewrite

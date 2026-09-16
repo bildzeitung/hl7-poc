@@ -494,13 +494,14 @@ HEAD_SHA=$(git rev-parse HEAD)
 # Never write a malformed SHA to bd metadata; `|| exit $?` keeps the validator's 1-vs-2 split.
 scripts/validate-sha40.sh land_head "$HEAD_SHA" || exit $?
 bd update <id> --remove-label needs-rebase --add-label ready-for-land \
-  --set-metadata land_head="$HEAD_SHA" \
-  --set-metadata land_summary="Merged main @ $(git rev-parse --short origin/main) into the branch"
+  --set-metadata land_head="$HEAD_SHA"
 scripts/bd-dolt-push.sh
 ```
 
-I leave `review_head` untouched — it still correctly describes the original build, and `/land`'s
-drift precheck reads `land_head`, which I just refreshed.
+I leave `review_head` and `land_summary` untouched — `land_summary` is the code-reviewer's account of
+*what the branch does*, which `/land` uses to build the merge commit message; a rebase merging `main`
+in doesn't change that, so overwriting it with a "merged main" note would erase the only description
+of the actual work. `/land`'s drift precheck reads `land_head`, which I just refreshed.
 
 **I do not remove the original build worktree** (never mine) **and I cannot remove my own** (I'm
 standing in it). `/code` reclaims mine right after I return, on **either** outcome, deriving it from
