@@ -161,6 +161,17 @@ def test_handle_invalid_body_dead_letters_with_processing_error() -> None:
     assert receiver.dead_lettered[0][1] == "ProcessingError"
 
 
+def test_handle_undecodable_body_dead_letters_with_processing_error() -> None:
+    receiver = _StubReceiver()
+    msg = _StubMessage(b"\xff\xfe not valid utf-8")
+
+    asyncio.run(handle(receiver, msg, ""))
+
+    assert receiver.completed == []
+    assert len(receiver.dead_lettered) == 1
+    assert receiver.dead_lettered[0][1] == "ProcessingError"
+
+
 def test_handle_push_failure_dead_letters_with_processing_error(monkeypatch) -> None:
     def _raising_push(payload: dict, webhook_url: str) -> None:
         raise OSError("webhook unreachable")
