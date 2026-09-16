@@ -22,5 +22,14 @@ list="$SCRIPT_DIR/beads-passive-exports.txt"
 mapfile -t paths < "$list"
 [ "${#paths[@]}" -gt 0 ] || exit 0
 
-git -C "$root" checkout HEAD -- "${paths[@]}" 2>/dev/null
+# ONE `git checkout` PER ENTRY, deliberately -- NOT one call listing them all.
+# `git checkout HEAD --` is atomic over its pathspecs: if any single listed
+# path is unknown to git in this repo state (e.g. no tracked
+# .beads/issues.jsonl here), the whole call fails and restores NOTHING,
+# silently, via the `2>/dev/null` below -- see docs/decisions.md. Per entry,
+# an unknown path is a harmless no-op and the others still restore.
+for export_path in "${paths[@]}"; do
+  [ -n "$export_path" ] || continue
+  git -C "$root" checkout HEAD -- "$export_path" 2>/dev/null
+done
 exit 0

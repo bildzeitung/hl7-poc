@@ -127,6 +127,16 @@ any other poison message -- it is dead-lettered with `reason="ProcessingError"`,
 processed as munged text. No new failure path was needed; the worker already had one for exactly
 this shape of problem, unlike the listener, which had to add spool-then-NACK plumbing.
 
+**2026-09-16 — `scripts/discard-beads-passive-export-churn.sh` restores each listed passive export
+with its own `git checkout` call, never one call listing them all (`hl7-poc-1yh`).** `git checkout`
+is atomic over its pathspecs: one call listing every entry from `scripts/beads-passive-exports.txt`
+fails whole-hog and restores nothing the moment any single entry is unknown to git in this repo
+(e.g. `.beads/issues.jsonl` is never tracked here). The script loops, one `git checkout HEAD --
+<path>` per entry, so an unknown/untracked entry only no-ops for itself and the others still
+restore. This mirrors the per-entry `git restore` rule `scripts/land-merge-one.sh` already follows
+for the same list (see that script's own comment) — the same defect shape, fixed the same way in
+both consumers of this list.
+
 ## Deferred, not forgotten
 
 Decisions this project has deliberately not made yet. Each stays open until a ticket revisits it.
