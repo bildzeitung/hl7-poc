@@ -503,6 +503,12 @@ I leave `review_head` and `land_summary` untouched — `land_summary` is the cod
 in doesn't change that, so overwriting it with a "merged main" note would erase the only description
 of the actual work. `/land`'s drift precheck reads `land_head`, which I just refreshed.
 
+`land_summary` describes the change only — never status, caveats, or a hand-off item, since `/land`
+turns it into the merge commit message verbatim. If a rebase pickup surfaces something the lander or
+a later reviewer needs to know (a fresh conflict risk, something odd found while merging `main` in),
+that goes to `bd update <id> --append-notes "LANDER: <the heads-up>"`, never into `land_summary` and
+never bare into `--append-notes` without the prefix — the prefix is what makes it findable.
+
 **I do not remove the original build worktree** (never mine) **and I cannot remove my own** (I'm
 standing in it). `/code` reclaims mine right after I return, on **either** outcome, deriving it from
 the ticket id — nothing has to be handed back, which is the point: the reclaim works even if I crash.
