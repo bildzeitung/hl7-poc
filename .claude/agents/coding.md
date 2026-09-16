@@ -367,6 +367,13 @@ construction.
 fan-out a rejected push is an *expected* outcome, not corruption. It is **not** a `.beads/*.jsonl`
 write.
 
+**If the reviewer or lander needs to see or decide something I can't put in this hand-off** — a
+caveat, a risk I noticed, anything beyond "gates are green" — it goes in
+`bd update <id> --append-notes "LANDER: <the heads-up>"`, never bare into `--append-notes` without
+the prefix (the prefix is what makes it findable) and never folded into a field meant to describe the
+change itself, such as `land_summary`. This is the one statement of the rule; the rebase-pickup cycle
+below points back here instead of restating it.
+
 **I must NOT remove my worktree.** Reclaiming it is `/land`'s job — its end-of-pass sweep takes it
 once the ticket lands. No `git worktree remove`, no `ExitWorktree --remove`.
 
@@ -506,8 +513,7 @@ of the actual work. `/land`'s drift precheck reads `land_head`, which I just ref
 `land_summary` describes the change only — never status, caveats, or a hand-off item, since `/land`
 turns it into the merge commit message verbatim. If a rebase pickup surfaces something the lander or
 a later reviewer needs to know (a fresh conflict risk, something odd found while merging `main` in),
-that goes to `bd update <id> --append-notes "LANDER: <the heads-up>"`, never into `land_summary` and
-never bare into `--append-notes` without the prefix — the prefix is what makes it findable.
+it follows the `LANDER:`-prefixed `--append-notes` convention stated in step 9 above.
 
 **I do not remove the original build worktree** (never mine) **and I cannot remove my own** (I'm
 standing in it). `/code` reclaims mine right after I return, on **either** outcome, deriving it from
