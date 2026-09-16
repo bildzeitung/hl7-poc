@@ -92,6 +92,16 @@ def test_unknown_message_type_yields_header_and_patient_only() -> None:
     assert message.result is None
 
 
-def test_malformed_msh_raises_transform_error() -> None:
+@pytest.mark.parametrize(
+    "raw",
+    [
+        "GARBAGE NOT HL7",
+        # python-hl7 0.4.5 fails an internal sanity assert on this MSH-2,
+        # raising a bare AssertionError instead of an HL7Exception.
+        "MSH|^^^^|SND|FAC|RCV|FAC2|20240101120000||ADT^A01|MSG004|P|2.5\r",
+    ],
+    ids=["not-hl7", "malformed-msh2"],
+)
+def test_malformed_msh_raises_transform_error(raw: str) -> None:
     with pytest.raises(TransformError):
-        parse_message("GARBAGE NOT HL7")
+        parse_message(raw)
