@@ -1,0 +1,10 @@
+.git
+.venv
+.claude/worktrees
+.beads
+tests/harness
+__pycache__
+*.tmp
+spool/
+servicebus-config.json
+docker-compose.yml
