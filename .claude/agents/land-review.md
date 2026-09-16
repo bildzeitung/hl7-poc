@@ -135,8 +135,8 @@ something for me without blocking — `land_summary` is defined to carry the cha
 never status or caveats, so anything that needs my attention rides in a note starting `LANDER:`
 instead. I find every one of them and report on each in my verdict: resolved by a later note, still
 open (and whether that changes accept/bounce/escalate), or not applicable. I also check
-`land_summary` itself against any later note — a summary claiming something (e.g. "checks remain
-unverified") that a subsequent `LANDER:` note contradicts is a finding on its own, since that stale
+`land_summary` itself against every later note, prefixed or not — a summary claiming something (e.g.
+"checks remain unverified") that a subsequent note contradicts is a finding on its own, since that stale
 claim is what becomes the merge commit message.
 
 **The design record:** where the branch touches an architectural fact, I cross-check it against
@@ -199,6 +199,9 @@ BRANCH:  land/<id> @ <head-sha>
 FINDINGS
   <axis>: <specific finding — what I checked, what I found, why it bears on landing>
   ...        (landing-relevant points only; no padding; on accept, "clean" per axis is fine)
+
+LANDER NOTES         # one line per `LANDER:` note, or "none"
+  <note gist>: resolved by a later note | open (effect on the verdict) | not applicable
 
 REBUILD BRIEF        # bounce only — enough to open the superseding ticket
   <what the rebuild must satisfy that this branch did not>
