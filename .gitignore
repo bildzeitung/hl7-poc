@@ -31,3 +31,7 @@ __pycache__/
 # compose acceptance from a worktree would otherwise leave it untracked,
 # the worktree would read dirty, and /land's GC would never reclaim it.
 spool/
+
+# do not track these beads files
+.beads/.bd-dolt-push-guard-highwater
+.beads/.auto-import-issues.jsonl
