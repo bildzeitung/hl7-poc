@@ -75,8 +75,8 @@ def push(payload: dict, webhook_url: str | None) -> None:
 
 
 async def handle(receiver, msg, webhook_url: str | None) -> None:
-    raw = b"".join(msg.body).decode("utf-8", errors="replace")
     try:
+        raw = b"".join(msg.body).decode("utf-8")  # strict: the worker is the last hop
         model = CanonicalMessage.from_json(raw)
         payload = decide(model)
         if payload:

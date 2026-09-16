@@ -119,6 +119,14 @@ this decision closes. `extract_frames` no longer decodes at all -- it returns ra
 `process_frame` spools those bytes byte-exact before attempting the strict UTF-8 decode, so the
 undecodable bytes are never lost even though they are never forwarded.
 
+**2026-09-16 — Worker applies the same fail-closed stance to Service Bus bodies (`hl7-poc-ngr`).**
+The worker is the last hop, so an undecodable message body is not recoverable there either: `handle`
+now decodes strictly (`errors="strict"`, the `bytes.decode` default) instead of `errors="replace"`.
+A `UnicodeDecodeError` falls into the same generic `except Exception` the worker already uses for
+any other poison message -- it is dead-lettered with `reason="ProcessingError"`, not silently
+processed as munged text. No new failure path was needed; the worker already had one for exactly
+this shape of problem, unlike the listener, which had to add spool-then-NACK plumbing.
+
 ## Deferred, not forgotten
 
 Decisions this project has deliberately not made yet. Each stays open until a ticket revisits it.
