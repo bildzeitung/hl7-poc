@@ -73,16 +73,19 @@ class ListenerState:
 # ---- MLLP framing (pure, unit-testable without asyncio) -------------------
 
 
-def extract_frames(buf: bytes) -> tuple[list[str], bytes]:
+def extract_frames(buf: bytes) -> tuple[list[bytes], bytes]:
     """Split complete VT...FS[CR] frames out of an accumulating byte buffer.
 
-    Returns the decoded frames found and whatever partial data is left for
-    the next read -- so a frame split across two socket reads is simply
-    whatever remains after the first call, fed back in on the second.
+    Returns the raw frame bytes found, undecoded, and whatever partial data
+    is left for the next read -- so a frame split across two socket reads is
+    simply whatever remains after the first call, fed back in on the second.
+    Decoding happens in process_frame, after the bytes are already spooled --
+    see docs/decisions.md (undecodable frames are NACKed, never
+    silently replaced).
     """
-    frames: list[str] = []
+    frames: list[bytes] = []
     while (start := buf.find(VT)) != -1 and (end := buf.find(FS, start)) != -1:
-        raw = buf[start + 1 : end].decode("utf-8", errors="replace")
+        raw = buf[start + 1 : end]
         skip = 2 if buf[end + 1 : end + 2] == CR else 1
         buf = buf[end + skip :]
         frames.append(raw)
@@ -106,14 +109,16 @@ def build_ack(header: MessageHeader, code: str) -> str:
     )
 
 
-def _fallback_header(raw: str) -> MessageHeader:
+def _fallback_header(raw: bytes) -> MessageHeader:
     """Header for the ACK when the full transform failed.
 
     Never raises -- an ACK must still go out even for a message python-hl7
     itself cannot parse, in which case MSA-2 carries a synthetic id because
-    the sender's control id is unreadable.
+    the sender's control id is unreadable. The decode is lossy on purpose:
+    this is the one place undecodable bytes may be mangled, because the
+    result only ever reaches the ACK and the log, never a forwarded message.
     """
-    header = parse_header(raw)
+    header = parse_header(raw.decode("utf-8", errors="replace"))
     if header is not None:
         return header
     return MessageHeader(
@@ -159,7 +164,7 @@ def _spool_path(spool_dir: Path) -> Path:
 
 
 async def process_frame(
-    raw: str,
+    raw: bytes,
     *,
     spool_dir: Path,
     rejected_dir: Path,
@@ -174,16 +179,31 @@ async def process_frame(
     """
     file = _spool_path(spool_dir)
     try:
-        # Bytes, not text: text mode would rewrite LF bytes to os.linesep,
-        # breaking the byte-exact copy of the CR-terminated frame the drain
-        # re-parses.
-        file.write_bytes(raw.encode("utf-8"))  # durable first
+        # Bytes, not text: text mode translates outgoing LF to os.linesep,
+        # breaking the byte-exact round-trip a CR-terminated frame needs.
+        file.write_bytes(raw)  # durable first, byte-exact
     except OSError as err:
         logger.error("spool write failed, NACKing: %s", err)
-        return build_ack(_fallback_header(raw), "AE")
+        header = _fallback_header(raw)
+        return build_ack(header, "AE")
+
+    # Fail closed on undecodable bytes rather than silently replacing them
+    # (docs/decisions.md) -- the sender's AA would otherwise cover data that
+    # was never actually forwarded intact.
+    try:
+        text = raw.decode("utf-8")
+    except UnicodeDecodeError as err:
+        header = _fallback_header(raw)
+        logger.error(
+            "frame is not valid UTF-8 for control id %s, NACKing and rejecting: %s",
+            header.control_id,
+            err,
+        )
+        _reject(file, rejected_dir)
+        return build_ack(header, "AE")
 
     try:
-        message = parse_message(raw)
+        message = parse_message(text)
     except TransformError as err:
         header = _fallback_header(raw)
         logger.error(
@@ -243,11 +263,14 @@ async def drain_spool(spool_dir: Path, rejected_dir: Path, forward: ForwardFn) -
     for file in sorted(spool_dir.glob("*.hl7")):
         # Bytes, not text: universal newlines would turn every CR segment
         # terminator into LF, collapsing the message into one MSH segment.
-        raw = file.read_bytes().decode("utf-8")
+        # The decode sits inside the reject path because the spool can hold
+        # undecodable bytes (process_frame writes durably before it decodes);
+        # an escaping UnicodeDecodeError would abort the entire drain pass.
         try:
+            raw = file.read_bytes().decode("utf-8")
             message = parse_message(raw)
-        except TransformError as err:
-            logger.error("drain: mapping failed, rejecting %s: %s", file.name, err)
+        except (TransformError, UnicodeDecodeError) as err:
+            logger.error("drain: unusable frame, rejecting %s: %s", file.name, err)
             _reject(file, rejected_dir)
             continue
         await forward(message, file)
