@@ -585,13 +585,17 @@ all-bounced tick pays a full test run to re-certify content already carried, and
 could only be pre-existing breakage this pass neither caused nor could attribute.
 
 ```bash
-uv run --frozen nox -t fix && uv run --frozen nox -s tests && scripts/harness-tests-gate.sh --base-ref origin/main && uv run --frozen nox -s lock_currency
+uv run --frozen nox -t fix && uv run --frozen nox -s tests && scripts/harness-tests-gate.sh --base-ref origin/main && uv run --frozen nox -s build_members && uv run --frozen nox -s lock_currency
 ```
 
 `harness-tests-gate.sh` runs the harness's own suite (`nox -s harness_tests`, `tests/harness/`)
 only when the merged set touched a harness path — `scripts/`, `.claude/`, `tests/harness/`, the
 build files — against `origin/main`, the ref Section 1 fetched and nothing has pushed over yet.
 Otherwise it prints one line and exits 0: those pins can only change verdict when those files do.
+
+`build_members` actually builds each workspace member's wheel/sdist (`uv build --all-packages`) —
+`nox -s tests` cannot catch a packaging misconfiguration, since `uv sync` installs every member
+editable regardless of what a real build would produce.
 
 `lock_currency` catches a stale dependency lock here — locally, before public CI does. A branch that
 bumped a dependency without regenerating the lock (or whose merge with another accepted branch
@@ -622,7 +626,7 @@ chain reports its last-run command's status, so anything after it would mask the
   ```
 
   **This is a loop I drive, not a single call.** The script works to a deadline (its own default,
-  well under the tool cap) because the replay runs `4 + 4N` gate sessions and a straight-through run
+  well under the tool cap) because the replay runs `5 + 5N` gate sessions and a straight-through run
   would hit that cap mid-attribution — leaving nothing bounced, so the next pass rebuilds the same
   set and reds again. Re-invoke it, unchanged, until it stops asking for more:
 

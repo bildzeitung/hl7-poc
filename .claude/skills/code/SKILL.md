@@ -82,7 +82,8 @@ build:
 > local name suffixed with your own worktree's directory — unique by construction), `git merge
 > origin/main`, re-gate, commit anything the gate loop produced, then `git push origin HEAD:land/<id>`
 > (an ordinary push by explicit refspec — the merge only appends, it never rewrites what's already
-> there), refresh `land_head`/`land_summary`, and swap `needs-rebase` straight to `ready-for-land`
+> there), refresh `land_head` (leaving `land_summary` untouched — it's the code-reviewer's account of
+> the work, not of the rebase), and swap `needs-rebase` straight to `ready-for-land`
 > yourself. Do not merge, close, or push the default branch. On a merge conflict: if both sides added
 > independent, non-overlapping content (a **mechanical** conflict), resolve it directly with `Edit`
 > and continue; if the two sides genuinely **disagree**, abort and escalate yourself

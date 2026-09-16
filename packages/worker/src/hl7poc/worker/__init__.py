@@ -28,7 +28,9 @@ import typer
 from azure.servicebus import NEXT_AVAILABLE_SESSION
 from azure.servicebus.aio import AutoLockRenewer, ServiceBusClient
 from azure.servicebus.exceptions import OperationTimeoutError, ServiceBusError
+
 from hl7poc.model import CanonicalMessage
+from hl7poc.probe import handle_http
 
 app = typer.Typer(add_completion=False)
 
@@ -72,18 +74,9 @@ def push(payload: dict, webhook_url: str | None) -> None:
         print(f"PUSH -> {body.decode()}")
 
 
-def _prop(msg, key: str) -> str:
-    props = msg.application_properties or {}
-    val = props.get(key) or props.get(key.encode())
-    return val.decode() if isinstance(val, (bytes, bytearray)) else (val or "")
-
-
 async def handle(receiver, msg, webhook_url: str | None) -> None:
-    if _prop(msg, "msgType") == "PROBE":
-        await receiver.complete_message(msg)  # listener readiness probes
-        return
-    raw = b"".join(msg.body).decode("utf-8", errors="replace")
     try:
+        raw = b"".join(msg.body).decode("utf-8")  # strict: the worker is the last hop
         model = CanonicalMessage.from_json(raw)
         payload = decide(model)
         if payload:
@@ -128,23 +121,6 @@ async def pump(
         except ServiceBusError as err:
             print(f"service bus error, retrying: {err}", file=sys.stderr)
             await asyncio.sleep(5)
-
-
-async def handle_http(reader, writer) -> None:
-    try:
-        line = await asyncio.wait_for(reader.readline(), timeout=3)
-        ok = b" /live " in line or line.startswith(b"GET /live")
-        status, body = ("200 OK", b"ok") if ok else ("404 Not Found", b"")
-        writer.write(
-            f"HTTP/1.1 {status}\r\nContent-Length: {len(body)}\r\n"
-            f"Connection: close\r\n\r\n".encode()
-            + body
-        )
-        await writer.drain()
-    except (TimeoutError, ConnectionResetError):
-        pass
-    finally:
-        writer.close()
 
 
 async def _serve(

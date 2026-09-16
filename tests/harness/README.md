@@ -44,7 +44,7 @@ nothing.
 
 ## Do I need all of them?
 
-The suite is 35 modules / 934 tests / under a minute with 8 workers — and, through the gate
+The suite is 35 modules / 938 tests / under a minute with 8 workers — and, through the gate
 script, it costs an ordinary project branch nothing. The test *count* is mostly parametrisation —
 `test_gh_write_guard` alone contributes 335 cases, one per `gh` command form, in about ten
 seconds. Count is not cost.
@@ -55,11 +55,11 @@ frozen harness files, the doctor, tooling no skill invokes) already stayed behin
 `dev-tests/`. What is genuinely optional here is **whatever gates a skill you don't use**. The
 modules are independent, so deleting a file is safe:
 
-| Drop if you… | Modules | Lines |
-|---|---|---|
-| don't use epics | `test_epic_*` (3) | 649 |
-| don't run `/sweep` | `test_sweep_*` (5) | 1,164 |
-| never fan out `/code` | `test_code_concurrency_cap` | 233 |
+| Drop if you… | Modules |
+|---|---|
+| don't use epics | `test_epic_*` (3) |
+| don't run `/sweep` | `test_sweep_*` (5) |
+| never fan out `/code` | `test_code_concurrency_cap` |
 
 **Keep regardless**, whatever else you drop — these gate code that deletes worktrees, resets
 branches, force-removes refs, or spends the user's public identity, where a regression is

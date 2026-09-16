@@ -15,8 +15,8 @@ from __future__ import annotations
 
 import asyncio
 import functools
-import json
 import logging
+import os
 import signal
 import sys
 import time
@@ -29,8 +29,10 @@ from typing import Annotated
 import typer
 from azure.servicebus import ServiceBusMessage
 from azure.servicebus.aio import ServiceBusClient
+
 from hl7poc.listener.transform import TransformError, parse_header, parse_message
 from hl7poc.model import CanonicalMessage, MessageHeader
+from hl7poc.probe import handle_http
 
 app = typer.Typer(add_completion=False)
 logger = logging.getLogger(__name__)
@@ -43,37 +45,47 @@ ForwardFn = Callable[[CanonicalMessage, Path], Awaitable[None]]
 class ListenerState:
     """Readiness state shared between the MLLP/probe handlers and the retry loop.
 
-    /ready requires all three: MLLP bound, Service Bus reachable, not
-    shutting down -- a plain instance attribute set is enough since every
-    reader/writer runs on the same event loop thread.
+    /ready is spool-first -- MLLP bound, spool dir writable, not shutting down;
+    Service Bus is deliberately not an input (see docs/decisions.md), so
+    sb_healthy is carried only for the response body. A plain instance
+    attribute set is enough since every reader/writer runs on the same event
+    loop thread.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, spool_dir: Path) -> None:
+        self.spool_dir = spool_dir
         self.mllp_listening = False
         self.sb_healthy = False
         self.shutting_down = False
 
-    def as_dict(self) -> dict[str, bool]:
-        return {
+    def ready(self) -> tuple[bool, dict[str, bool]]:
+        spool_writable = os.access(self.spool_dir, os.W_OK)
+        fields = {
             "mllp_listening": self.mllp_listening,
             "sb_healthy": self.sb_healthy,
             "shutting_down": self.shutting_down,
+            "spool_writable": spool_writable,
         }
+        is_ready = self.mllp_listening and spool_writable and not self.shutting_down
+        return is_ready, fields
 
 
 # ---- MLLP framing (pure, unit-testable without asyncio) -------------------
 
 
-def extract_frames(buf: bytes) -> tuple[list[str], bytes]:
+def extract_frames(buf: bytes) -> tuple[list[bytes], bytes]:
     """Split complete VT...FS[CR] frames out of an accumulating byte buffer.
 
-    Returns the decoded frames found and whatever partial data is left for
-    the next read -- so a frame split across two socket reads is simply
-    whatever remains after the first call, fed back in on the second.
+    Returns the raw frame bytes found, undecoded, and whatever partial data
+    is left for the next read -- so a frame split across two socket reads is
+    simply whatever remains after the first call, fed back in on the second.
+    Decoding happens in process_frame, after the bytes are already spooled --
+    see docs/decisions.md (undecodable frames are NACKed, never
+    silently replaced).
     """
-    frames: list[str] = []
+    frames: list[bytes] = []
     while (start := buf.find(VT)) != -1 and (end := buf.find(FS, start)) != -1:
-        raw = buf[start + 1 : end].decode("utf-8", errors="replace")
+        raw = buf[start + 1 : end]
         skip = 2 if buf[end + 1 : end + 2] == CR else 1
         buf = buf[end + skip :]
         frames.append(raw)
@@ -97,14 +109,16 @@ def build_ack(header: MessageHeader, code: str) -> str:
     )
 
 
-def _fallback_header(raw: str) -> MessageHeader:
+def _fallback_header(raw: bytes) -> MessageHeader:
     """Header for the ACK when the full transform failed.
 
     Never raises -- an ACK must still go out even for a message python-hl7
     itself cannot parse, in which case MSA-2 carries a synthetic id because
-    the sender's control id is unreadable.
+    the sender's control id is unreadable. The decode is lossy on purpose:
+    this is the one place undecodable bytes may be mangled, because the
+    result only ever reaches the ACK and the log, never a forwarded message.
     """
-    header = parse_header(raw)
+    header = parse_header(raw.decode("utf-8", errors="replace"))
     if header is not None:
         return header
     return MessageHeader(
@@ -150,7 +164,7 @@ def _spool_path(spool_dir: Path) -> Path:
 
 
 async def process_frame(
-    raw: str,
+    raw: bytes,
     *,
     spool_dir: Path,
     rejected_dir: Path,
@@ -165,13 +179,31 @@ async def process_frame(
     """
     file = _spool_path(spool_dir)
     try:
-        file.write_text(raw, encoding="utf-8")  # durable first
+        # Bytes, not text: text mode translates outgoing LF to os.linesep,
+        # breaking the byte-exact round-trip a CR-terminated frame needs.
+        file.write_bytes(raw)  # durable first, byte-exact
     except OSError as err:
         logger.error("spool write failed, NACKing: %s", err)
-        return build_ack(_fallback_header(raw), "AE")
+        header = _fallback_header(raw)
+        return build_ack(header, "AE")
+
+    # Fail closed on undecodable bytes rather than silently replacing them
+    # (docs/decisions.md) -- the sender's AA would otherwise cover data that
+    # was never actually forwarded intact.
+    try:
+        text = raw.decode("utf-8")
+    except UnicodeDecodeError as err:
+        header = _fallback_header(raw)
+        logger.error(
+            "frame is not valid UTF-8 for control id %s, NACKing and rejecting: %s",
+            header.control_id,
+            err,
+        )
+        _reject(file, rejected_dir)
+        return build_ack(header, "AE")
 
     try:
-        message = parse_message(raw)
+        message = parse_message(text)
     except TransformError as err:
         header = _fallback_header(raw)
         logger.error(
@@ -216,41 +248,7 @@ async def handle_mllp(
                 )
                 writer.write(VT + ack.encode() + FS + CR)
                 await writer.drain()
-    except (ConnectionResetError, asyncio.IncompleteReadError):
-        pass
-    finally:
-        writer.close()
-
-
-# ---- probe endpoints (stdlib-free-of-frameworks on purpose) --------------
-
-
-async def handle_http(
-    reader: asyncio.StreamReader,
-    writer: asyncio.StreamWriter,
-    *,
-    state: ListenerState,
-) -> None:
-    try:
-        request_line = await asyncio.wait_for(reader.readline(), timeout=3)
-        path = request_line.split(b" ")[1].decode() if b" " in request_line else "/"
-        if path == "/live":
-            status, body = "200 OK", b"ok"
-        elif path == "/ready":
-            ready = (
-                state.mllp_listening and state.sb_healthy and not state.shutting_down
-            )
-            status = "200 OK" if ready else "503 Service Unavailable"
-            body = json.dumps(state.as_dict()).encode()
-        else:
-            status, body = "404 Not Found", b""
-        writer.write(
-            f"HTTP/1.1 {status}\r\nContent-Length: {len(body)}\r\n"
-            f"Connection: close\r\n\r\n".encode()
-            + body
-        )
-        await writer.drain()
-    except (TimeoutError, IndexError, ConnectionResetError):
+    except ConnectionResetError, asyncio.IncompleteReadError:
         pass
     finally:
         writer.close()
@@ -263,11 +261,16 @@ async def drain_spool(spool_dir: Path, rejected_dir: Path, forward: ForwardFn) -
     """Re-parse and forward every spooled frame. Re-parsed here, not cached,
     so a mapping bug never loses data -- the spool stays raw HL7."""
     for file in sorted(spool_dir.glob("*.hl7")):
-        raw = file.read_text(encoding="utf-8")
+        # Bytes, not text: universal newlines would turn every CR segment
+        # terminator into LF, collapsing the message into one MSH segment.
+        # The decode sits inside the reject path because the spool can hold
+        # undecodable bytes (process_frame writes durably before it decodes);
+        # an escaping UnicodeDecodeError would abort the entire drain pass.
         try:
+            raw = file.read_bytes().decode("utf-8")
             message = parse_message(raw)
-        except TransformError as err:
-            logger.error("drain: mapping failed, rejecting %s: %s", file.name, err)
+        except (TransformError, UnicodeDecodeError) as err:
+            logger.error("drain: unusable frame, rejecting %s: %s", file.name, err)
             _reject(file, rejected_dir)
             continue
         await forward(message, file)
@@ -310,34 +313,14 @@ async def _forward(
         )
 
 
-async def _startup_probe(sender, send_lock: asyncio.Lock, state: ListenerState) -> None:
-    try:
-        async with send_lock:
-            await sender.send_messages(
-                ServiceBusMessage(
-                    body="probe",
-                    session_id="_probe",
-                    application_properties={"msgType": "PROBE"},
-                )
-            )
-        state.sb_healthy = True
-        logger.info("service bus reachable")
-    except Exception as err:  # noqa: BLE001
-        logger.warning("service bus not ready yet: %s", err)
-
-
 async def retry_loop(
     state: ListenerState,
-    sender,
-    send_lock: asyncio.Lock,
     forward: ForwardFn,
     spool_dir: Path,
     rejected_dir: Path,
 ) -> None:
     while not state.shutting_down:
         try:
-            if not state.sb_healthy:
-                await _startup_probe(sender, send_lock, state)
             await drain_spool(spool_dir, rejected_dir, forward)
         except Exception:
             logger.exception("retry loop error")
@@ -358,7 +341,7 @@ async def serve(
     spool_dir.mkdir(parents=True, exist_ok=True)
     rejected_dir = spool_dir / "rejected"
 
-    state = ListenerState()
+    state = ListenerState(spool_dir)
     tasks: set[asyncio.Task] = set()
 
     async with ServiceBusClient.from_connection_string(
@@ -385,13 +368,11 @@ async def serve(
         logger.info("MLLP listening on :%d", mllp_port)
 
         http_server = await asyncio.start_server(
-            functools.partial(handle_http, state=state), "0.0.0.0", http_port
+            functools.partial(handle_http, ready=state.ready), "0.0.0.0", http_port
         )
         logger.info("probes on :%d", http_port)
 
-        retry = asyncio.create_task(
-            retry_loop(state, sender, send_lock, forward, spool_dir, rejected_dir)
-        )
+        retry = asyncio.create_task(retry_loop(state, forward, spool_dir, rejected_dir))
 
         stop = asyncio.Event()
         loop = asyncio.get_running_loop()
