@@ -22,5 +22,11 @@ list="$SCRIPT_DIR/beads-passive-exports.txt"
 mapfile -t paths < "$list"
 [ "${#paths[@]}" -gt 0 ] || exit 0
 
-git -C "$root" checkout HEAD -- "${paths[@]}" 2>/dev/null
+# ONE `git checkout` PER ENTRY, never one call listing them all: it is atomic
+# over its pathspecs, so a single path unknown to git (e.g. an untracked
+# .beads/issues.jsonl) would silently restore NOTHING. See docs/decisions.md.
+for export_path in "${paths[@]}"; do
+  [ -n "$export_path" ] || continue
+  git -C "$root" checkout HEAD -- "$export_path" 2>/dev/null
+done
 exit 0
