@@ -59,3 +59,40 @@ Use three terminals to show each piece live:
    To view a message, run `tr '\r' '\n' < "$(ls /tmp/demo-spool/*.hl7 | head -1)"`.
    `/tmp/demo-spool/rejected/` stays absent or empty.
 5. **Teardown:** `docker compose rm -sf simhospital`, then stop the listener with Ctrl-C.
+
+## Smoke test: full chain (SimHospital -> listener -> Service Bus -> worker)
+
+`scripts/smoke-sim-full-chain.sh` covers what `smoke-sim-listener.sh` deliberately
+leaves out: Service Bus forwarding and the worker. It brings up the Service Bus
+emulator stack (`servicebus` + its `mssql` dependency), the listener, SimHospital,
+and `hl7worker`, and requires evidence that messages both reached Service Bus
+(`/ready` reports `sb_healthy: true`, and frames leave the spool once forwarded)
+and were consumed by the worker (its log shows a session accepted).
+
+Preconditions: Docker Desktop, the locally built `simhospital:latest` image, and
+ports 2575/8080/8081/5672/5300 free.
+
+```bash
+scripts/smoke-sim-full-chain.sh          # PASS/FAIL, exit 0/1 (2 = precondition)
+scripts/smoke-sim-full-chain.sh --keep   # keep spool + logs for inspection
+```
+
+It passes when at least `MIN_FRAMES` (default 10) frames have arrived within
+`WAIT_SECS` (default 180), `sb_healthy` is true, and the worker's log shows it
+accepted a session, with no frame rejected.
+
+### Demonstrating it by hand
+
+Five terminals, on top of the three from the listener-only demo above:
+
+1. **Service Bus emulator:** `docker compose up mssql servicebus`. Wait for
+   `GET localhost:5300/health` to return `{"status":"healthy"}`.
+2. **Listener and worker:** start the listener as above, then
+   `uv run --frozen hl7worker --servicebus-connection '<emulator string above>'`.
+3. **Simulator:** as above.
+4. **Forwarding:** `curl -s localhost:8080/ready` now shows `sb_healthy: true`,
+   and files in `/tmp/demo-spool` disappear as they forward successfully.
+5. **Consumption:** the worker's terminal logs `session accepted: <mrn>` and, for
+   SIU/final-ORU events, `notified mrn=...`.
+6. **Teardown:** `docker compose rm -sf simhospital servicebus mssql`, then stop
+   the listener and worker with Ctrl-C.
