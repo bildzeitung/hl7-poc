@@ -52,3 +52,9 @@ The value a local `hl7listener`/`hl7worker` should pass for `SERVICEBUS_CONNECTI
 emulator's fixed developer connection string, recorded in [README.md's "Local Service Bus
 emulator" section](../README.md#local-service-bus-emulator) — the canonical location. Not
 duplicated here.
+
+## Service Bus emulator: duplicate-detection window
+
+`servicebus-config.json`'s `hl7-events` queue sets `DuplicateDetectionHistoryTimeWindow` to `PT5M`
+(`RequiresDuplicateDetection` stays `true`). The emulator image rejects any value above `PT5M` and
+exits at startup, so `PT5M` is the ceiling, not a chosen retention target.

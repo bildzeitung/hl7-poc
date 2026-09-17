@@ -9,7 +9,7 @@
             "Properties": {
               "DeadLetteringOnMessageExpiration": false,
               "DefaultMessageTimeToLive": "PT1H",
-              "DuplicateDetectionHistoryTimeWindow": "PT10M",
+              "DuplicateDetectionHistoryTimeWindow": "PT5M",
               "ForwardDeadLetteredMessagesTo": "",
               "ForwardTo": "",
               "LockDuration": "PT1M",
