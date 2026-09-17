@@ -295,7 +295,7 @@ def test_close_mllp_server_bounded_even_with_connection_left_open() -> None:
     async def run() -> float:
         opened = asyncio.Event()
 
-        async def handle(reader, writer) -> None:  # noqa: ANN001 - asyncio callback shape
+        async def handle(reader, writer) -> None:
             opened.set()
             await asyncio.sleep(3600)  # never closes on its own
 
