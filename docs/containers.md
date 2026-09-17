@@ -53,3 +53,11 @@ oversight to "complete" later.
 Out of scope here: k8s manifests, Helm charts, an image registry, and CI image
 publishing are separate tickets when wanted. Image scanning and SBOM
 generation are likewise out of scope.
+
+## Service Bus emulator's SQL dependency
+
+The `servicebus` service in `docker-compose.yml` needs a SQL Server-compatible
+backing store; its `mssql` neighbor is `mcr.microsoft.com/mssql/server:2022-latest`,
+matching Microsoft's current emulator setup docs. It used to be
+`mcr.microsoft.com/azure-sql-edge:latest`, but Azure SQL Edge was retired on
+2025-09-30, so that image is no longer maintained.

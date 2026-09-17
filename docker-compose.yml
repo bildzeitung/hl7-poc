@@ -21,16 +21,16 @@ services:
       - "5672:5672"                # AMQP -> local listener/worker connect here
       - "5300:5300"                # admin client
     environment:
-      SQL_SERVER: sqledge
+      SQL_SERVER: mssql
       MSSQL_SA_PASSWORD: "${MSSQL_SA_PASSWORD:-Str0ng!Passw0rd}"
       ACCEPT_EULA: "Y"
     depends_on:
-      sqledge:
+      mssql:
         condition: service_started
     restart: unless-stopped
 
-  sqledge:
-    image: mcr.microsoft.com/azure-sql-edge:latest
+  mssql:
+    image: mcr.microsoft.com/mssql/server:2022-latest
     environment:
       ACCEPT_EULA: "Y"
       MSSQL_SA_PASSWORD: "${MSSQL_SA_PASSWORD:-Str0ng!Passw0rd}"
