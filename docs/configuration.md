@@ -30,6 +30,7 @@ Fixed values carried over from the reference implementations, not exposed as env
 | Constant | Value | Where it applies |
 |---|---|---|
 | Spool retry / drain interval | 5s | Listener: how often the retry loop re-drains the spool. |
+| MLLP close budget | 8s | Listener: time budget on `SIGTERM`/`SIGINT` to wait for already-accepted MLLP connections to close before giving up and draining anyway. |
 | Shutdown drain budget | 8s | Listener: time budget on `SIGTERM`/`SIGINT` to drain the spool before exiting. |
 | Worker shutdown budget | 30s | Worker: time budget on `SIGTERM`/`SIGINT` to finish the in-flight session before exiting. |
 | Session idle wait | 5s | Worker: how long the pump waits for `NEXT_AVAILABLE_SESSION` before looping. |
