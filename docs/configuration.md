@@ -38,6 +38,14 @@ Fixed values carried over from the reference implementations, not exposed as env
 | Probe read timeout | 3s | Both: timeout for a probe HTTP handler read; defined once as `hl7poc.probe.READ_TIMEOUT`. |
 | Webhook timeout | 5s | Worker: timeout for a webhook POST when `WEBHOOK_URL` is set. |
 
+## Local SimHospital demo and smoke test
+
+| Env var | Used by | Default | Meaning |
+|---|---|---|---|
+| `PATHWAYS_PER_HOUR` | `docker-compose.yml` (SimHospital's `-pathways_per_hour` flag); `scripts/smoke-sim-listener.sh` | `60` in compose; the smoke script exports `3600` when unset | Rate SimHospital generates pathways (and therefore HL7 messages) at. The script's higher default lets its `WAIT_SECS` window reliably see `MIN_FRAMES` spooled. |
+| `MIN_FRAMES` | `scripts/smoke-sim-listener.sh` | `10` | Frames that must be spooled by the listener before the smoke test passes. |
+| `WAIT_SECS` | `scripts/smoke-sim-listener.sh` | `120` | Seconds the smoke test waits for `MIN_FRAMES` before failing. |
+
 ## Python and image tags
 
 Rationale for the Python version and the image tags: [`docs/decisions.md`](decisions.md).
