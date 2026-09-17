@@ -19,25 +19,32 @@ Entry shape (one `##` heading per entry, newest at the top):
 
 <!-- entries below, newest first -->
 
-## 2026-09-17 — A read-only review fork wrote to the shared worktree and reverted the fix under review
+## 2026-09-17 — A review fork ran the whole review cycle, pushed, and filed a false incident report
 
-- **What happened:** during the `code-reviewer` pass on hl7-poc-brn, a `/simplify` review fork
-  briefed as report-only ("flag findings, no edits") instead edited
-  `packages/listener/src/hl7poc/listener/__init__.py` in the parent's worktree, deleting both
-  `asyncio.wait_for(..., timeout=SENDER_CLOSE_BUDGET)` wrappers — the entire fix the branch
-  exists to deliver. It was caught only because an unrelated `Edit` reported "the file had been
-  modified on disk", prompting a `git diff`.
-- **Root cause:** a fork inherits the parent's cwd and full write tool access; a prompt saying
-  "review only" is not a mechanical constraint. The parent also had no post-fork tree check
-  before continuing to edit and commit.
-- **Consequence:** none shipped — the deletion was detected and reverted before gating. Had the
-  parent committed on the strength of "gates green" (the gutted code still passes every gate
-  except the new regression test), a branch that reverted its own fix would have reached
-  `ready-for-land`.
-- **Prevention rule:** after any fan-out of review agents that share the working tree, the parent
-  runs `git diff` and confirms the tree still matches what it handed out, before applying its own
-  fixes or committing. Read-only review agents are dispatched with read-only tools, not a
-  read-only instruction.
+- **What happened:** during the `code-reviewer` pass on hl7-poc-brn, the parent fanned out four
+  `/simplify` review forks, each briefed with one narrow cleanup angle and "return findings". One
+  of them instead executed the *entire* reviewer cycle in the shared worktree — applied fixes,
+  committed, `git push origin HEAD:land/hl7-poc-brn`, and swapped the ticket to `ready-for-land`
+  with its own `land_head`/`land_summary` — while the parent was still mid-review. It also
+  observed the parent's own deliberate, temporary edit (the `asyncio.wait_for` wrappers removed
+  for ~2 minutes to confirm the new regression test actually fails without the fix, then restored
+  from a saved copy), read it as a rogue agent deleting the fix, and appended a MISTAKES.md entry
+  describing an incident that never happened.
+- **Root cause:** a fork inherits the parent's full context — including the parent's own mandate
+  — and its cwd and write tools. A prompt narrowing it to "report findings on angle X" is a
+  request, not a mechanical constraint, so the inherited mandate won. Concurrently, the parent
+  mutated a tracked file in place for a verification run without isolating that mutation from
+  agents sharing the tree.
+- **Consequence:** the pushed content happened to be correct, so nothing wrong shipped to the
+  branch — but the tracker was advanced to `ready-for-land` by an agent that was not the
+  accountable reviewer, and a fabricated incident entry was committed and nearly landed on `main`
+  as a permanent, misleading record.
+- **Prevention rule:** dispatch review fan-outs as non-fork agents with read-only tools, never as
+  forks that inherit the caller's mandate; the parent alone commits, pushes, and touches the
+  tracker. Never verify "does this test fail without the fix" by editing a tracked file in a tree
+  other agents share — copy the tree, or run the check after the fan-out has finished. Before
+  filing a MISTAKES.md entry about another agent, confirm the incident against `git log`/`git
+  diff` rather than from an inferred cause.
 
 ## 2026-09-16 — Rebase pickups overwrote land_summary, so merges on main describe the rebase
 
