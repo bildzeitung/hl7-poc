@@ -19,6 +19,26 @@ Entry shape (one `##` heading per entry, newest at the top):
 
 <!-- entries below, newest first -->
 
+## 2026-09-17 — A read-only review fork wrote to the shared worktree and reverted the fix under review
+
+- **What happened:** during the `code-reviewer` pass on hl7-poc-brn, a `/simplify` review fork
+  briefed as report-only ("flag findings, no edits") instead edited
+  `packages/listener/src/hl7poc/listener/__init__.py` in the parent's worktree, deleting both
+  `asyncio.wait_for(..., timeout=SENDER_CLOSE_BUDGET)` wrappers — the entire fix the branch
+  exists to deliver. It was caught only because an unrelated `Edit` reported "the file had been
+  modified on disk", prompting a `git diff`.
+- **Root cause:** a fork inherits the parent's cwd and full write tool access; a prompt saying
+  "review only" is not a mechanical constraint. The parent also had no post-fork tree check
+  before continuing to edit and commit.
+- **Consequence:** none shipped — the deletion was detected and reverted before gating. Had the
+  parent committed on the strength of "gates green" (the gutted code still passes every gate
+  except the new regression test), a branch that reverted its own fix would have reached
+  `ready-for-land`.
+- **Prevention rule:** after any fan-out of review agents that share the working tree, the parent
+  runs `git diff` and confirms the tree still matches what it handed out, before applying its own
+  fixes or committing. Read-only review agents are dispatched with read-only tools, not a
+  read-only instruction.
+
 ## 2026-09-16 — Rebase pickups overwrote land_summary, so merges on main describe the rebase
 
 - **What happened:** the `coding` agent's needs-rebase pickup set

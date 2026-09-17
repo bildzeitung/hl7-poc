@@ -53,9 +53,8 @@ MLLP_CLOSE_BUDGET = 8
 # unresponsive since the link was established, that wait rides on TCP-level
 # retransmission timers, not an AMQP-level one -- the same unbounded-close
 # shape MLLP_CLOSE_BUDGET bounds above, for the Service Bus side instead.
-# Applied to both sender.close() and the client's own close() below, so
-# worst case adds 2x this to shutdown; kept small to leave MLLP_CLOSE_BUDGET
-# (8s) + the drain (8s) + this stage comfortably under a typical 30s
+# Applied to both closes below, so shutdown's worst case is
+# MLLP_CLOSE_BUDGET + the drain + 2x this, under a typical 30s
 # terminationGracePeriodSeconds.
 SENDER_CLOSE_BUDGET = 4
 

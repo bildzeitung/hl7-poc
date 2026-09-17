@@ -374,4 +374,6 @@ def test_serve_shutdown_bounded_when_service_bus_close_hangs(
 
     elapsed = asyncio.run(run())
 
-    assert elapsed < 5.0
+    # Two bounded closes at 0.2s each; a 5s bound here would be satisfied by
+    # the wait_for above and assert nothing.
+    assert elapsed < 2.0
