@@ -7,6 +7,7 @@ from hl7poc.listener import (
     CR,
     FS,
     VT,
+    _close_mllp_server,
     build_ack,
     build_service_bus_message,
     drain_spool,
@@ -283,3 +284,40 @@ def test_service_bus_message_id_is_never_empty() -> None:
     # An empty message_id would make duplicate detection collapse every
     # control-id-less message into one.
     assert build_service_bus_message(message).message_id
+
+
+def test_close_mllp_server_bounded_even_with_connection_left_open() -> None:
+    # Regression for hl7-poc-0rs: wait_closed() on Python 3.12+ waits for every
+    # already-accepted connection to close, and has no timeout of its own. A
+    # client left connected (e.g. its container killed underneath a port
+    # proxy) must not hang shutdown -- k8s SIGKILLs after its grace period
+    # regardless.
+    async def run() -> float:
+        opened = asyncio.Event()
+
+        async def handle(reader, writer) -> None:  # noqa: ANN001 - asyncio callback shape
+            opened.set()
+            await asyncio.sleep(3600)  # never closes on its own
+
+        server = await asyncio.start_server(handle, "127.0.0.1", 0)
+        host, port = server.sockets[0].getsockname()[:2]
+        _reader, writer = await asyncio.open_connection(host, port)
+        await opened.wait()
+
+        import hl7poc.listener as listener_module
+
+        original_budget = listener_module.MLLP_CLOSE_BUDGET
+        listener_module.MLLP_CLOSE_BUDGET = 0.2
+        try:
+            start = asyncio.get_running_loop().time()
+            await _close_mllp_server(server)
+            elapsed = asyncio.get_running_loop().time() - start
+        finally:
+            listener_module.MLLP_CLOSE_BUDGET = original_budget
+            writer.close()
+
+        return elapsed
+
+    elapsed = asyncio.run(run())
+
+    assert elapsed < 2.0

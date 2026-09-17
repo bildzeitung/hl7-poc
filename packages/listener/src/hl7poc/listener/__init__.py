@@ -39,6 +39,14 @@ logger = logging.getLogger(__name__)
 
 VT, FS, CR = b"\x0b", b"\x1c", b"\x0d"
 
+# asyncio.Server.wait_closed() has no timeout of its own and on Python 3.12+
+# waits for every already-accepted connection to close; an MLLP client that
+# never closes its side (e.g. a container killed while a connection is still
+# half-open through a port proxy) would otherwise hang shutdown indefinitely.
+# Kubernetes SIGKILLs after its grace period regardless, so bound this stage
+# the same way the spool drain below is bounded.
+MLLP_CLOSE_BUDGET = 8
+
 ForwardFn = Callable[[CanonicalMessage, Path], Awaitable[None]]
 
 
@@ -327,6 +335,18 @@ async def retry_loop(
         await asyncio.sleep(5)
 
 
+async def _close_mllp_server(mllp_server: asyncio.AbstractServer) -> None:
+    """Stop accepting MLLP connections and wait, bounded, for open ones to close.
+
+    wait_closed() has no timeout of its own; see MLLP_CLOSE_BUDGET's comment.
+    """
+    mllp_server.close()
+    try:
+        await asyncio.wait_for(mllp_server.wait_closed(), timeout=MLLP_CLOSE_BUDGET)
+    except TimeoutError:
+        logger.warning("mllp server close timed out; connection(s) still open")
+
+
 # ---- lifecycle -------------------------------------------------------------
 
 
@@ -382,8 +402,7 @@ async def serve(
 
         # k8s: flip /ready to 503 first so traffic stops routing, then drain.
         state.shutting_down = True
-        mllp_server.close()
-        await mllp_server.wait_closed()
+        await _close_mllp_server(mllp_server)
         try:
             await asyncio.wait_for(
                 _final_drain(tasks, spool_dir, rejected_dir, forward), timeout=8
