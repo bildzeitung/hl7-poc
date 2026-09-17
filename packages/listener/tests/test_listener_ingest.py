@@ -1,5 +1,7 @@
 import asyncio
 import json
+import os
+import signal
 
 import pytest
 
@@ -13,6 +15,7 @@ from hl7poc.listener import (
     drain_spool,
     extract_frames,
     process_frame,
+    serve,
 )
 from hl7poc.model import CanonicalMessage, MessageHeader, Patient
 
@@ -323,3 +326,52 @@ def test_close_mllp_server_bounded_even_with_connection_left_open(
 
     assert elapsed < 2.0
     assert handler_exited
+
+
+@pytest.mark.parametrize("sig", [signal.SIGTERM, signal.SIGINT])
+def test_serve_shutdown_bounded_when_service_bus_close_hangs(
+    monkeypatch: pytest.MonkeyPatch, tmp_path, sig: signal.Signals
+) -> None:
+    # Regression for hl7-poc-brn: sender.close() / ServiceBusClient.close()
+    # do network I/O with no timeout of their own, so a Service Bus that has
+    # gone unreachable since the link was established must not hang shutdown.
+    monkeypatch.setattr("hl7poc.listener.SENDER_CLOSE_BUDGET", 0.2)
+
+    class HangingSender:
+        async def send_messages(self, message) -> None:
+            raise AssertionError("not exercised in this test")
+
+        async def close(self) -> None:
+            await asyncio.sleep(60)
+
+    class HangingClient:
+        def get_queue_sender(self, queue: str) -> HangingSender:
+            return HangingSender()
+
+        async def close(self) -> None:
+            await asyncio.sleep(60)
+
+    monkeypatch.setattr(
+        "hl7poc.listener.ServiceBusClient.from_connection_string",
+        lambda *a, **k: HangingClient(),
+    )
+
+    async def run() -> float:
+        serve_task = asyncio.create_task(
+            serve(
+                mllp_port=0,
+                http_port=0,
+                servicebus_connection="Endpoint=sb://unused/;SharedAccessKeyName=x;SharedAccessKey=x",
+                servicebus_queue="q",
+                spool_dir=tmp_path,
+            )
+        )
+        await asyncio.sleep(0.1)  # let serve() install its signal handlers
+        start = asyncio.get_running_loop().time()
+        os.kill(os.getpid(), sig)
+        await asyncio.wait_for(serve_task, timeout=5)
+        return asyncio.get_running_loop().time() - start
+
+    elapsed = asyncio.run(run())
+
+    assert elapsed < 5.0
