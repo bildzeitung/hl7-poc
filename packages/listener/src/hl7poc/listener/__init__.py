@@ -344,7 +344,10 @@ async def _close_mllp_server(mllp_server: asyncio.AbstractServer) -> None:
     try:
         await asyncio.wait_for(mllp_server.wait_closed(), timeout=MLLP_CLOSE_BUDGET)
     except TimeoutError:
-        logger.warning("mllp server close timed out; connection(s) still open")
+        logger.warning("mllp server close timed out; closing open connection(s)")
+        # Close the transports so each handle_mllp reads EOF and exits through
+        # its own finally, rather than being left for asyncio.run to cancel.
+        mllp_server.close_clients()
 
 
 # ---- lifecycle -------------------------------------------------------------
