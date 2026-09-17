@@ -42,15 +42,9 @@ Fixed values carried over from the reference implementations, not exposed as env
 
 | Env var | Used by | Default | Meaning |
 |---|---|---|---|
-| `PATHWAYS_PER_HOUR` | `docker-compose.yml` (SimHospital's `-pathways_per_hour` flag) | `60` in compose | Rate SimHospital generates pathways (and therefore HL7 messages) at. |
-| `PATHWAYS_PER_HOUR` | `scripts/smoke-sim-listener.sh` (exported before invoking compose) | `3600` in the script | Same knob, overridden to a much higher rate so the smoke test's `WAIT_SECS` window reliably sees `MIN_FRAMES` spooled. |
+| `PATHWAYS_PER_HOUR` | `docker-compose.yml` (SimHospital's `-pathways_per_hour` flag); `scripts/smoke-sim-listener.sh` | `60` in compose; the smoke script exports `3600` when unset | Rate SimHospital generates pathways (and therefore HL7 messages) at. The script's higher default lets its `WAIT_SECS` window reliably see `MIN_FRAMES` spooled. |
 | `MIN_FRAMES` | `scripts/smoke-sim-listener.sh` | `10` | Frames that must be spooled by the listener before the smoke test passes. |
 | `WAIT_SECS` | `scripts/smoke-sim-listener.sh` | `120` | Seconds the smoke test waits for `MIN_FRAMES` before failing. |
-
-`PATHWAYS_PER_HOUR` has two different defaults depending on entry point: `docker-compose.yml`
-defaults to `60` (a demo-friendly rate) when run directly; `scripts/smoke-sim-listener.sh` exports
-`3600` before invoking compose, overriding that default so the smoke test's `WAIT_SECS` window
-reliably observes `MIN_FRAMES` spooled frames.
 
 ## Python and image tags
 
