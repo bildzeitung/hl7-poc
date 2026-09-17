@@ -25,3 +25,39 @@ connection string:
 ```
 Endpoint=sb://localhost;SharedAccessKeyName=RootManageSharedAccessKey;SharedAccessKey=SAS_KEY_VALUE;UseDevelopmentEmulator=true;
 ```
+
+## Smoke test: SimHospital -> listener
+
+`scripts/smoke-sim-listener.sh` validates the path that works without Service Bus:
+SimHospital sends MLLP to a local `hl7listener`, which spools, maps and ACKs every
+frame. Service Bus forwarding is **not** covered -- with no emulator up, forwards fail
+and frames stay in the spool, as designed.
+
+Preconditions: Docker Desktop (supplies `host.docker.internal`), the locally built
+`simhospital:latest` image, and ports 2575/8080 free.
+
+```bash
+scripts/smoke-sim-listener.sh          # PASS/FAIL, exit 0/1 (2 = precondition)
+scripts/smoke-sim-listener.sh --keep   # keep spool + logs for inspection
+```
+
+It passes when at least `MIN_FRAMES` (default 10) frames are spooled within
+`WAIT_SECS` (default 120) and none were rejected. It runs SimHospital at
+`PATHWAYS_PER_HOUR=3600` (compose defaults to 60).
+
+### Demonstrating it by hand
+
+Use three terminals to show each piece live:
+
+1. **Listener:**
+   `uv run --frozen hl7listener --servicebus-connection '<emulator string above>' --spool-dir /tmp/demo-spool`
+2. **Readiness:** `curl -s localhost:8080/ready` shows `mllp_listening: true`, and
+   `sb_healthy: false` since no bus is running.
+3. **Simulator:** `PATHWAYS_PER_HOUR=3600 docker compose up simhospital`. Its log shows
+   `Sending message` lines. The dashboard is at http://localhost:8000.
+4. **Arrivals:** `watch -n2 'ls /tmp/demo-spool | wc -l'` shows the count rising.
+   To view a message, run `tr '\r' '\n' < "$(ls /tmp/demo-spool/*.hl7 | head -1)"`.
+   `/tmp/demo-spool/rejected/` stays absent or empty.
+5. **Teardown:** `docker compose rm -sf simhospital`, then stop the listener. Ctrl-C
+   (SIGINT) has been seen to hang while the bus is unreachable; if it does, run
+   `pkill -TERM -f bin/hl7listener`.
