@@ -8,7 +8,7 @@ services:
       - health/simulator
       - -output=mllp
       - -mllp_destination=host.docker.internal:2575
-      - -pathways_per_hour=60
+      - -pathways_per_hour=${PATHWAYS_PER_HOUR:-60}
     ports:
       - "8000:8000"                # dashboard
     restart: unless-stopped        # retries until your local listener is up
