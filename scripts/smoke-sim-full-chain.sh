@@ -9,7 +9,7 @@
 #
 # Usage: scripts/smoke-sim-full-chain.sh [--keep]
 #   --keep   leave logs and the spool dir in place for inspection
-# Env:     MIN_FRAMES (default 10), WAIT_SECS (default 180),
+# Env:     MIN_FRAMES (default 10, counted at the simulator), WAIT_SECS (default 180),
 #          PATHWAYS_PER_HOUR (default 3600, passed through to compose)
 # Exit:    0 pass, 1 fail, 2 precondition not met.
 
@@ -26,7 +26,7 @@ KEEP=false
 # The emulator's fixed developer connection string (README); real, not a stand-in --
 # both the listener and the worker forward/consume through it.
 SB_CONN='Endpoint=sb://localhost;SharedAccessKeyName=RootManageSharedAccessKey;SharedAccessKey=SAS_KEY_VALUE;UseDevelopmentEmulator=true;'
-WORKER_HTTP_PORT=${WORKER_HTTP_PORT:-8081}
+WORKER_HTTP_PORT=8081  # the listener's 8080 is likewise fixed, below
 
 die() { echo "PRECONDITION: $*" >&2; exit 2; }
 
@@ -43,16 +43,15 @@ SPOOL=$WORK/spool
 mkdir -p "$SPOOL"
 LISTENER_PID=
 WORKER_PID=
+LOGS_PID=
 
 cleanup() {
   echo "--- teardown"
   docker compose rm -sf simhospital servicebus mssql >/dev/null 2>&1 || true
-  for pid_var in WORKER_PID LISTENER_PID; do
-    pid=${!pid_var}
-    if [[ -n $pid ]] && kill -0 "$pid" 2>/dev/null; then
-      kill -TERM "$pid"
-      wait "$pid" 2>/dev/null || true
-    fi
+  for pid in "$LOGS_PID" "$WORKER_PID" "$LISTENER_PID"; do
+    [[ -n $pid ]] || continue
+    kill -TERM "$pid" 2>/dev/null || true
+    wait "$pid" 2>/dev/null || true
   done
   if $KEEP; then
     echo "kept: $WORK (listener.log, worker.log, simhospital.log, spool/)"
@@ -61,6 +60,9 @@ cleanup() {
   fi
 }
 trap cleanup EXIT
+# Untrapped, a signal kills the shell without running the EXIT trap, stranding
+# the emulator stack; exiting from the handler routes back through cleanup.
+trap 'exit 1' INT TERM
 
 echo "--- starting Service Bus emulator (+ mssql)"
 docker compose up -d mssql servicebus
@@ -103,47 +105,70 @@ echo "listener ready: $(curl -s localhost:8080/ready)"
 
 echo "--- starting simhospital (pathways/hour: $PATHWAYS_PER_HOUR)"
 docker compose up -d simhospital
+touch "$WORK/simhospital.log"
+docker compose logs -f --no-log-prefix simhospital >"$WORK/simhospital.log" 2>&1 &
+LOGS_PID=$!
 
-# A frame that forwards successfully is unlinked from the spool immediately
-# (spool-drains-on-forward is the documented behaviour), so counting current
-# spool contents undercounts arrivals. SEEN_LOG accumulates every filename
-# ever observed, forwarded or not, as the durable count of frames that landed.
-SEEN_LOG=$WORK/seen-frames.log
-touch "$SEEN_LOG"
-record_seen() { find "$SPOOL" -maxdepth 1 -name '*.hl7' -printf '%f\n' >>"$SEEN_LOG"; }
-count_seen() { sort -u "$SEEN_LOG" | wc -l; }
+# A frame that forwards successfully is unlinked from the spool within
+# milliseconds, so polling the spool would miss nearly every frame on a healthy
+# chain; volume is counted at the source instead. sb_healthy and the worker's
+# log are early signals only -- the invariant that proves every frame traversed
+# is the spool draining to empty once the source stops, with nothing rejected
+# by the listener and nothing dead-lettered by the worker.
+WORKER_EVIDENCE='session accepted:|notified mrn='
+frames_sent() { grep -ci 'sending message' "$WORK/simhospital.log" || true; }
+spooled() { find "$SPOOL" -maxdepth 1 -name '*.hl7' | wc -l; }
 sb_healthy() { curl -s localhost:8080/ready | grep -q '"sb_healthy": *true'; }
-worker_progressed() { grep -qE 'session accepted:|notified mrn=' "$WORK/worker.log"; }
+worker_progressed() { grep -qE "$WORKER_EVIDENCE" "$WORK/worker.log"; }
 
 deadline=$((SECONDS + WAIT_SECS))
-until (($(count_seen) >= MIN_FRAMES)) && sb_healthy && worker_progressed; do
+until (($(frames_sent) >= MIN_FRAMES)) && sb_healthy && worker_progressed; do
   if ((SECONDS > deadline)); then
     echo "FAIL: chain incomplete after ${WAIT_SECS}s"
-    echo "  frames arrived: $(count_seen) (wanted $MIN_FRAMES)"
-    echo "  sb_healthy:     $(curl -s localhost:8080/ready)"
+    echo "  frames sent:       $(frames_sent) (wanted $MIN_FRAMES)"
+    echo "  sb_healthy:        $(curl -s localhost:8080/ready)"
     echo "  worker progressed: $(worker_progressed && echo yes || echo no)"
-    docker compose logs --tail 20 simhospital
+    tail -20 "$WORK/simhospital.log"
     tail -20 "$WORK/worker.log"
     exit 1
   fi
-  record_seen
   sleep 2
 done
-record_seen
-docker compose logs simhospital >"$WORK/simhospital.log" 2>&1
 
-frames=$(count_seen)
-rejected=0
-[[ -d $SPOOL/rejected ]] && rejected=$(find "$SPOOL/rejected" -type f | wc -l)
+frames=$(frames_sent)
+docker compose rm -sf simhospital >/dev/null 2>&1 || true
+
+# With the source stopped, anything still spooled is a frame that never
+# forwarded, so the spool must reach empty.
+deadline=$((SECONDS + 30))
+until (($(spooled) == 0)); do
+  if ((SECONDS > deadline)); then
+    echo "FAIL: $(spooled) frame(s) still unforwarded in the spool after 30s"
+    tail -20 "$WORK/listener.log"
+    exit 1
+  fi
+  sleep 1
+done
+
+rejected=$(find "$SPOOL/rejected" -type f 2>/dev/null | wc -l || true)
+# The worker dead-letters anything it cannot decode or process, which every
+# other signal here survives: it would still accept a session, the listener
+# would still forward, and the spool would still drain.
+dead_lettered=$(grep -c 'dead-lettering' "$WORK/worker.log" || true)
 
 echo "--- results"
-echo "frames arrived:     $frames"
-echo "frames rejected:    $rejected"
-echo "sb_healthy:         $(curl -s localhost:8080/ready)"
-echo "worker evidence:    $(grep -E 'session accepted:|notified mrn=' "$WORK/worker.log" | tail -5)"
+echo "frames emitted by simulator: $frames"
+echo "frames rejected by listener: $rejected"
+echo "messages dead-lettered:      $dead_lettered"
+echo "sb_healthy:                  $(curl -s localhost:8080/ready)"
+echo "worker evidence:             $(grep -E "$WORKER_EVIDENCE" "$WORK/worker.log" | tail -5)"
 
 if ((rejected > 0)); then
   echo "FAIL: $rejected frame(s) NACKed and set aside in rejected/"
+  exit 1
+fi
+if ((dead_lettered > 0)); then
+  echo "FAIL: the worker dead-lettered $dead_lettered message(s)"
   exit 1
 fi
 echo "PASS"

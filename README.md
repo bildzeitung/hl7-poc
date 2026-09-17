@@ -77,13 +77,18 @@ scripts/smoke-sim-full-chain.sh          # PASS/FAIL, exit 0/1 (2 = precondition
 scripts/smoke-sim-full-chain.sh --keep   # keep spool + logs for inspection
 ```
 
-It passes when at least `MIN_FRAMES` (default 10) frames have arrived within
-`WAIT_SECS` (default 180), `sb_healthy` is true, and the worker's log shows it
-accepted a session, with no frame rejected.
+It passes when, within `WAIT_SECS` (default 180), the simulator has emitted at least
+`MIN_FRAMES` (default 10) frames, `sb_healthy` is true, and the worker's log shows it
+accepted a session — then, with the simulator stopped, the spool drains to empty with
+nothing rejected by the listener and nothing dead-lettered by the worker. That last
+group is the real proof; the rest are early signals. Volume is counted at the
+simulator because a successfully forwarded frame is unlinked from the spool within
+milliseconds, so the spool counts what is *stuck*, not what arrived.
 
 ### Demonstrating it by hand
 
-Five terminals, on top of the three from the listener-only demo above:
+Five terminals — the three from the listener-only demo above, plus the emulator
+and the worker:
 
 1. **Service Bus emulator:** `docker compose up mssql servicebus`. Wait for
    `GET localhost:5300/health` to return `{"status":"healthy"}`.
