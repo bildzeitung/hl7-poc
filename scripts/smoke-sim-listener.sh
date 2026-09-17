@@ -45,8 +45,7 @@ LISTENER_PID=
 
 cleanup() {
   echo "--- teardown"
-  docker compose stop simhospital >/dev/null 2>&1 || true
-  docker compose rm -f simhospital >/dev/null 2>&1 || true
+  docker compose rm -sf simhospital >/dev/null 2>&1 || true
   if [[ -n $LISTENER_PID ]] && kill -0 "$LISTENER_PID" 2>/dev/null; then
     kill -TERM "$LISTENER_PID"
     wait "$LISTENER_PID" 2>/dev/null || true
