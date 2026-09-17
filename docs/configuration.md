@@ -58,3 +58,9 @@ duplicated here.
 `servicebus-config.json`'s `hl7-events` queue sets `DuplicateDetectionHistoryTimeWindow` to `PT5M`
 (`RequiresDuplicateDetection` stays `true`). The emulator image rejects any value above `PT5M` and
 exits at startup, so `PT5M` is the ceiling, not a chosen retention target.
+
+The window absorbs the listener's double-send — an in-flight forward racing the 5s spool retry
+drain — which lands seconds apart, well inside 5 minutes. Two limits: the message id is MSH-10, so a
+frame without one gets a fresh random id per send and is never deduplicated; and a re-send more than
+5 minutes later (the listener crashed after the broker accepted the send but before the spool file
+was unlinked, and stayed down past the window) is not deduplicated by the broker either.
