@@ -58,6 +58,4 @@ Use three terminals to show each piece live:
 4. **Arrivals:** `watch -n2 'ls /tmp/demo-spool | wc -l'` shows the count rising.
    To view a message, run `tr '\r' '\n' < "$(ls /tmp/demo-spool/*.hl7 | head -1)"`.
    `/tmp/demo-spool/rejected/` stays absent or empty.
-5. **Teardown:** `docker compose rm -sf simhospital`, then stop the listener. Ctrl-C
-   (SIGINT) has been seen to hang while the bus is unreachable; if it does, run
-   `pkill -TERM -f bin/hl7listener`.
+5. **Teardown:** `docker compose rm -sf simhospital`, then stop the listener with Ctrl-C.
