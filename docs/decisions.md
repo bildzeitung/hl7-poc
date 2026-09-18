@@ -136,6 +136,18 @@ fails whole-hog and restores nothing the moment any single entry is unknown to g
 restore. This mirrors the per-entry `git restore` rule `scripts/land-merge-one.sh` already follows
 for the same list (see that script's own comment).
 
+**2026-09-17 — Live SIU S12-S15 compose coverage is permanently out of scope; unit tests only
+(`hl7-poc-pzl`).** A ~13-minute live compose run (`PATHWAYS_PER_HOUR=3600`, recorded on
+`hl7-poc-wld.9`) sent only ADT^A01 and ORU^R01 across ~20 distinct pathways
+(`pathway_with_vital_signs_and_random_result`, `aki_scenario_1..21`). Every pathway YAML baked into
+the `simhospital:latest` image
+(`configs/pathways/{pathways,aki_pathways,sample_pathways,test_pathways,hardcoded_messages_pathways,sample_pathways_json}.yml`)
+was inspected; none define an SCH/SIU-producing pathway. `worker.decide()`'s SIU S12-S15 branch
+(`packages/worker/src/hl7poc/worker/__init__.py`, `_SIU_TITLES` / S12-S15 handling) is therefore
+exercised by unit tests only, deliberately, and stays that way — this is a PoC, and adding or
+repointing a SimHospital pathway fixture just to produce live SIU traffic is not worth it. Revisit
+only if the project stops being a PoC and needs to demonstrate SIU handling against real traffic.
+
 ## Deferred, not forgotten
 
 Decisions this project has deliberately not made yet. Each stays open until a ticket revisits it.
