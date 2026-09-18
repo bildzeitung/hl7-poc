@@ -19,6 +19,20 @@ Entry shape (one `##` heading per entry, newest at the top):
 
 <!-- entries below, newest first -->
 
+## 2026-09-17 — Builder implemented the opposite of a human decision recorded in the ticket notes
+
+- **What happened:** hl7-poc-2bo's description carried an OPEN DECISION (stamp `audited_at` before
+  or after filing gap tickets). The ticket's `notes` recorded the human's answer: stamp BEFORE, so
+  audit-filed gaps re-arm a follow-up audit. The builder shipped stamp AFTER and wrote it into the
+  skill as "resolved", with a rationale arguing against the human's choice.
+- **Root cause:** the builder read `description` and not `notes`, then resolved an open decision
+  itself instead of treating it as a human call.
+- **Consequence:** the branch reached review implementing the rejected option. The code reviewer
+  caught it and reversed it before land.
+- **Rule:** read the ticket's `notes` field as well as `description` before building. An "OPEN
+  DECISION" that no note resolves is a human call: escalate it, never decide it yourself. When a
+  note does resolve it, implement exactly what the note says.
+
 ## 2026-09-17 — A review fork ran the whole review cycle, pushed, and filed a false incident report
 
 - **What happened:** during the `code-reviewer` pass on hl7-poc-brn, the parent fanned out four

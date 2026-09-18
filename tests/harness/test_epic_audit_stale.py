@@ -1,12 +1,11 @@
 """Tests for scripts/epic-audit-stale.sh (hl7-poc-2bo).
 
-`/epic-audit` is otherwise terminal for an `epic-audited` epic (its own
-SKILL.md: "I don't re-arm automatically") -- so a parent-child child added
-AFTER the audit (found in code review, a /land bounce re-parent, or by hand)
-closes and the epic is never re-reviewed: the `epic-audited` claim silently
-goes stale. This script is the shared derivation of staleness -- "true" when
-the epic carries `epic-audited` AND has a parent-child child whose
-`created_at` postdates the `audited_at` metadata stamped at the last audit --
+A parent-child child added after an audit (found in code review, a /land
+bounce re-parent, by hand, or the audit's own gap tickets) must re-arm the
+epic, or the `epic-audited` claim silently goes stale. This script is the
+shared derivation of staleness -- "true" when the epic carries
+`epic-audited` AND has a parent-child child whose `created_at` is at or after
+the `audited_at` metadata stamped at the last audit --
 reused by both `scripts/epic-completion-check.sh` (/land's re-arm signal) and
 /epic-audit's own safety-net selection query, so the two can never drift.
 
@@ -188,3 +187,18 @@ def test_audited_with_zero_children_is_false(tmp_path: Path) -> None:
     )
     assert result.returncode == 0, result.stderr
     assert result.stdout.strip() == "false"
+
+
+def test_child_created_same_second_as_stamp_is_true(tmp_path: Path) -> None:
+    """/epic-audit stamps audited_at BEFORE filing gaps, at second precision:
+    a gap filed in the same second must still re-arm (>=, not >)."""
+    show_fixtures = {
+        "proj-epic": _epic(labels=["epic-audited"], audited_at="2026-09-15T00:00:00Z")
+    }
+    list_fixtures = {
+        "proj-epic": [{"id": "proj-gap", "created_at": "2026-09-15T00:00:00Z"}]
+    }
+    result = _run(
+        "proj-epic", tmp_path, show_fixtures=show_fixtures, list_fixtures=list_fixtures
+    )
+    assert result.stdout.strip() == "true"

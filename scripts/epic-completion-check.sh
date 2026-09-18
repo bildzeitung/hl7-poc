@@ -50,11 +50,8 @@ epic_json=$(bd show "$parent_id" --json)
 # epic epic-ready-to-audit, and every later sibling is rejected by the label
 # guard below without paying for the child query.
 #
-# epic-audited is NOT an outright reject: an already-audited epic re-arms
-# when it gained a parent-child child after its audited_at stamp (hl7-poc-2bo)
-# -- otherwise a child added post-audit (found in code review, a /land
-# bounce re-parent, a human) closes and the audit claim silently goes stale
-# forever, since /epic-audit itself never re-audits an epic-audited epic.
+# epic-audited is not an outright reject: a stale audit re-arms (see
+# scripts/epic-audit-stale.sh).
 printf '%s' "$epic_json" | jq -e '
   .[0] as $e
   | ($e.labels // []) as $lbl

@@ -46,8 +46,8 @@ An epic is **auditable** when ALL hold:
 - `issue_type == "epic"` and `status != "closed"` — I never re-open or audit a closed epic;
 - it has **≥1** `parent-child` child, and **every** such child is `closed`;
 - it is **not** already labeled **`epic-audited`**, OR it is, but that stamp has gone **stale**
-  (hl7-poc-2bo): it gained a parent-child child whose `created_at` postdates the `audited_at`
-  metadata I stamped at the last audit (step 6). `scripts/epic-audit-stale.sh <epic-id>` is the
+  (hl7-poc-2bo): it has a parent-child child whose `created_at` is at or after the `audited_at`
+  metadata I stamped at the last audit (step 5). `scripts/epic-audit-stale.sh <epic-id>` is the
   shared derivation — same script `epic-completion-check.sh` uses for `/land`'s re-arm signal, so
   the two never drift. Idempotency for the non-stale case is unchanged: a genuinely-audited epic is
   never re-picked.
@@ -128,6 +128,18 @@ valid, common outcome.
 
 ## 5. Disposition — file, escalate, or nothing
 
+**First, before filing anything, stamp the audit time:**
+
+```bash
+bd update <epic> --set-metadata audited_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+```
+
+**Stamp BEFORE filing (decided by a human, hl7-poc-2bo).** Every gap/escalation ticket filed below
+is a parent-child child of this epic, so its `created_at` is at or after the stamp and marks the
+audit stale (`scripts/epic-audit-stale.sh` compares with `>=`, so a gap filed in the same second
+still counts). Once those gaps close, the epic re-arms and a follow-up audit verifies they were
+delivered. This converges: each re-audit files only new gaps, and a clean re-audit files none.
+
 ### Actionable gap → file a child ticket (flows into `/code`)
 
 When the fix is *clear enough to hand a builder* — a good bug report: what's missing, why, and what
@@ -170,30 +182,21 @@ I file nothing, but still mark the epic reviewed so it isn't swept again.
 
 ## 6. Mark the epic reviewed and publish
 
-However the review came out, retire the work signal and stamp the epic, **after** filing any gap or
-escalation tickets from step 5:
+However the review came out, retire the work signal and label the epic (`audited_at` was already
+stamped at the start of step 5):
 
 ```bash
-bd update <epic> --set-metadata audited_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 bd label add <epic> epic-audited
 bd label remove <epic> epic-ready-to-audit   # no-op if it wasn't set
 scripts/bd-dolt-push.sh
 ```
 
-**Stamp AFTER filing, not before (resolved, hl7-poc-2bo's open decision).** The gap/escalation
-tickets step 5 files are themselves parent-child children of this epic, so an `audited_at` stamped
-*before* filing them would immediately read as stale (their `created_at` postdates the stamp) and
-re-arm a follow-up audit the moment the first gap closes — verifying gaps I already reviewed rather
-than catching genuinely new post-audit scope. Stamping after filing matches this mechanism's
-pre-existing terminal behavior: my own gap tickets do not re-arm a follow-up audit; only a *later*,
-independently-added child does.
-
-`epic-audited` is no longer unconditionally terminal: an audited epic is out of my sweep **unless**
-it later gains a parent-child child (see "Select the auditable epics" above) — in which case a fresh
-audit re-arms automatically the next time that child closes, no explicit `/epic-audit <epic>` call
-required. Re-running the audit right now on a still-current stamp is still a fresh, explicit
-`/epic-audit <epic>` call, same as before. The epic itself stays **open**; closing it is the human's
-call once the audit's gaps are resolved.
+`epic-audited` is not terminal: an audited epic is out of my sweep **until** it has a parent-child
+child created at or after `audited_at` — my own gap tickets or any later-added child. When that
+child closes, `/land` re-flags the epic `epic-ready-to-audit` and the safety net above picks it up.
+An epic-audited epic with no `audited_at` (audited before this mechanism existed) never re-arms on
+its own; re-auditing it is an explicit `/epic-audit <epic>`. The epic itself stays **open**; closing
+it is the human's call once the audit's gaps are resolved.
 
 ## What I never do
 
