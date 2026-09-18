@@ -189,12 +189,21 @@ async def process_frame(
     rejected_dir: Path,
     forward: ForwardFn,
     tasks: set[asyncio.Task],
+    in_flight: set[Path] | None = None,
 ) -> str:
     """Spool, transform, and ACK one HL7 frame; schedule the forward on success.
 
     Returns the HL7 ACK text to write back on the wire. The forward task is
     kept in `tasks` (discarded on completion) -- an un-awaited, unreferenced
     asyncio task can be garbage-collected mid-flight.
+
+    `in_flight`, if given, records the spool file for the duration of this
+    direct forward so a concurrent drain_spool() pass (retry_loop, every 5s)
+    skips it instead of sending the same frame a second time -- see
+    docs/configuration.md. The file is added before the task is scheduled (no
+    `await` sits between the spool write above and here, so there is no
+    window where the file is spooled but not yet marked in-flight) and
+    removed once the forward settles, success or failure.
     """
     file = _spool_path(spool_dir)
     try:
@@ -234,9 +243,17 @@ async def process_frame(
         return build_ack(header, "AE")
 
     ack = build_ack(message.header, "AA")
+    if in_flight is not None:
+        in_flight.add(file)
     task = asyncio.create_task(forward(message, file))
     tasks.add(task)
-    task.add_done_callback(tasks.discard)
+
+    def _done(t: asyncio.Task) -> None:
+        tasks.discard(t)
+        if in_flight is not None:
+            in_flight.discard(file)
+
+    task.add_done_callback(_done)
     return ack
 
 
@@ -251,6 +268,7 @@ async def handle_mllp(
     rejected_dir: Path,
     forward: ForwardFn,
     tasks: set[asyncio.Task],
+    in_flight: set[Path] | None = None,
 ) -> None:
     buf = b""
     try:
@@ -264,6 +282,7 @@ async def handle_mllp(
                     rejected_dir=rejected_dir,
                     forward=forward,
                     tasks=tasks,
+                    in_flight=in_flight,
                 )
                 writer.write(VT + ack.encode() + FS + CR)
                 await writer.drain()
@@ -276,10 +295,24 @@ async def handle_mllp(
 # ---- spool drain (retry loop) ---------------------------------------------
 
 
-async def drain_spool(spool_dir: Path, rejected_dir: Path, forward: ForwardFn) -> None:
+async def drain_spool(
+    spool_dir: Path,
+    rejected_dir: Path,
+    forward: ForwardFn,
+    in_flight: set[Path] | None = None,
+) -> None:
     """Re-parse and forward every spooled frame. Re-parsed here, not cached,
-    so a mapping bug never loses data -- the spool stays raw HL7."""
+    so a mapping bug never loses data -- the spool stays raw HL7.
+
+    `in_flight`, if given, names spool files a concurrent direct-forward task
+    (process_frame -> _forward) currently owns; those are skipped rather than
+    forwarded a second time here. Broker duplicate detection alone is not
+    enough (a frame with no MSH-10 gets a fresh message id per send) -- see
+    docs/configuration.md.
+    """
     for file in sorted(spool_dir.glob("*.hl7")):
+        if in_flight is not None and file in in_flight:
+            continue
         # Bytes, not text: universal newlines would turn every CR segment
         # terminator into LF, collapsing the message into one MSH segment.
         # The decode sits inside the reject path because the spool can hold
@@ -307,6 +340,7 @@ async def _final_drain(
     spool_dir: Path,
     rejected_dir: Path,
     forward: ForwardFn,
+    in_flight: set[Path] | None = None,
 ) -> None:
     """Await in-flight forwards, then drain the spool.
 
@@ -315,7 +349,7 @@ async def _final_drain(
     re-sending work that was about to complete.
     """
     await asyncio.gather(*tasks, return_exceptions=True)
-    await drain_spool(spool_dir, rejected_dir, forward)
+    await drain_spool(spool_dir, rejected_dir, forward, in_flight)
 
 
 async def _forward(
@@ -344,10 +378,11 @@ async def retry_loop(
     forward: ForwardFn,
     spool_dir: Path,
     rejected_dir: Path,
+    in_flight: set[Path] | None = None,
 ) -> None:
     while not state.shutting_down:
         try:
-            await drain_spool(spool_dir, rejected_dir, forward)
+            await drain_spool(spool_dir, rejected_dir, forward, in_flight)
         except Exception:
             logger.exception("retry loop error")
         await asyncio.sleep(5)
@@ -384,6 +419,7 @@ async def serve(
 
     state = ListenerState(spool_dir)
     tasks: set[asyncio.Task] = set()
+    in_flight: set[Path] = set()
 
     sb_client = ServiceBusClient.from_connection_string(servicebus_connection)
     try:
@@ -400,6 +436,7 @@ async def serve(
                 rejected_dir=rejected_dir,
                 forward=forward,
                 tasks=tasks,
+                in_flight=in_flight,
             ),
             "0.0.0.0",
             mllp_port,
@@ -412,7 +449,9 @@ async def serve(
         )
         logger.info("probes on :%d", http_port)
 
-        retry = asyncio.create_task(retry_loop(state, forward, spool_dir, rejected_dir))
+        retry = asyncio.create_task(
+            retry_loop(state, forward, spool_dir, rejected_dir, in_flight)
+        )
 
         stop = asyncio.Event()
         loop = asyncio.get_running_loop()
@@ -425,7 +464,8 @@ async def serve(
         await _close_mllp_server(mllp_server)
         try:
             await asyncio.wait_for(
-                _final_drain(tasks, spool_dir, rejected_dir, forward), timeout=8
+                _final_drain(tasks, spool_dir, rejected_dir, forward, in_flight),
+                timeout=8,
             )
         except TimeoutError:
             logger.warning("shutdown drain timed out; spool retained")
