@@ -409,10 +409,9 @@ def test_serve_shutdown_does_not_double_send_a_file_retry_loop_is_mid_draining(
             await asyncio.sleep(0)
 
         os.kill(os.getpid(), signal.SIGTERM)
-        # Give serve()'s shutdown path a chance to reach retry.cancel() and
-        # await it -- if that await is missing, retry_loop's send above is
-        # still "in flight" from _final_drain's point of view, but nothing
-        # stops it from starting a second send of the same file regardless.
+        # Pass/fail on the fixed code does not depend on this delay (the held
+        # send is either cancelled or completes first); the delay only lets an
+        # unfixed serve() start _final_drain's second send of the same file.
         await asyncio.sleep(0.1)
         retry_loop_send_may_finish.set()
         await asyncio.wait_for(serve_task, timeout=5)
