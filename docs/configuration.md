@@ -43,9 +43,9 @@ Fixed values carried over from the reference implementations, not exposed as env
 
 | Env var | Used by | Default | Meaning |
 |---|---|---|---|
-| `PATHWAYS_PER_HOUR` | `docker-compose.yml` (SimHospital's `-pathways_per_hour` flag); `scripts/smoke-sim-listener.sh` | `60` in compose; the smoke script exports `3600` when unset | Rate SimHospital generates pathways (and therefore HL7 messages) at. The script's higher default lets its `WAIT_SECS` window reliably see `MIN_FRAMES` spooled. |
-| `MIN_FRAMES` | `scripts/smoke-sim-listener.sh` | `10` | Frames that must be spooled by the listener before the smoke test passes. |
-| `WAIT_SECS` | `scripts/smoke-sim-listener.sh` | `120` | Seconds the smoke test waits for `MIN_FRAMES` before failing. |
+| `PATHWAYS_PER_HOUR` | `docker-compose.yml` (SimHospital's `-pathways_per_hour` flag); `scripts/smoke-sim-listener.sh`; `scripts/smoke-sim-full-chain.sh` | `60` in compose; both smoke scripts export `3600` when unset | Rate SimHospital generates pathways (and therefore HL7 messages) at. The scripts' higher default lets their `WAIT_SECS` window reliably see `MIN_FRAMES`. |
+| `MIN_FRAMES` | `scripts/smoke-sim-listener.sh`; `scripts/smoke-sim-full-chain.sh` | `10` (both) | Frames required before the smoke test passes: spooled by the listener (listener-only script), or sent by SimHospital (full-chain script). |
+| `WAIT_SECS` | `scripts/smoke-sim-listener.sh`; `scripts/smoke-sim-full-chain.sh` | `120` (listener-only); `180` (full-chain) | Seconds the smoke test waits for `MIN_FRAMES` before failing. |
 
 ## Python and image tags
 
