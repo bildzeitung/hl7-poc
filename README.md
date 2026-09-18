@@ -93,12 +93,15 @@ milliseconds, so the spool counts what is *stuck*, not what arrived.
 
 ### Demonstrating it by hand
 
-Five terminals: the emulator, the listener, the worker, the simulator, and one
-for checks.
+Five terminals: the listener, the simulator, the emulator, the worker, and one
+for checks. The order is deliberate. Bringing Service Bus up late lets the spool
+fill so you can watch it drain, and bringing the worker up last lets the queue
+build a backlog so you can watch the worker consume it.
 
-1. **Service Bus emulator (terminal 1):** `docker compose up mssql servicebus`.
-   Wait until `curl -s localhost:5300/health` returns `{"status":"healthy"}`.
-2. **Listener (terminal 2):**
+Before the demo, run `docker compose pull mssql servicebus` so the emulator
+starts without a download.
+
+1. **Listener (terminal 1):**
 
    ```bash
    uv run --frozen hl7listener \
@@ -106,19 +109,26 @@ for checks.
      --spool-dir /tmp/demo-spool
    ```
 
-3. **Worker (terminal 3):**
+2. **Simulator (terminal 2):** `PATHWAYS_PER_HOUR=3600 docker compose up simhospital`.
+   Its log shows `Sending message` lines. The dashboard is at http://localhost:8000/simulated-hospital/.
+3. **Spool fills (terminal 5):** `curl -s localhost:8080/ready` shows
+   `mllp_listening: true` and `sb_healthy: false`. Then run
+   `watch -n2 'ls /tmp/demo-spool | wc -l'` and leave it running: the count climbs
+   because there is no bus to forward to.
+4. **Service Bus emulator (terminal 3):** `docker compose up mssql servicebus`.
+   Wait until `curl -s localhost:5300/health` returns `{"status":"healthy"}`.
+5. **Spool drains (terminal 5):** within a few seconds (the spool retry runs every 5s), `/ready` shows
+   `sb_healthy: true` and the spool count falls to zero as the listener forwards
+   its backlog. The messages now wait in the `hl7-events` queue.
+6. **Worker (terminal 4):**
 
    ```bash
    uv run --frozen hl7worker \
      --servicebus-connection 'Endpoint=sb://localhost;SharedAccessKeyName=RootManageSharedAccessKey;SharedAccessKey=SAS_KEY_VALUE;UseDevelopmentEmulator=true;'
    ```
 
-4. **Simulator (terminal 4):** `PATHWAYS_PER_HOUR=3600 docker compose up simhospital`.
-   Its log shows `Sending message` lines. The dashboard is at http://localhost:8000/simulated-hospital/.
-5. **Forwarding (terminal 5):** `curl -s localhost:8080/ready` shows
-   `mllp_listening: true` and `sb_healthy: true`. `watch -n2 'ls /tmp/demo-spool | wc -l'`
-   stays near zero, because files leave the spool as soon as they are forwarded.
-6. **Consumption:** the worker's terminal logs `session accepted: <mrn>` and, for
-   SIU/final-ORU events, `notified mrn=...`.
+   It logs a burst of `session accepted: <mrn>` lines as it works through the
+   queued backlog, then settles to the simulator's pace. For SIU/final-ORU events
+   it also logs `notified mrn=...`.
 7. **Teardown:** `docker compose rm -sf simhospital servicebus mssql`, then stop
    the listener and worker with Ctrl-C.
