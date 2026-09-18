@@ -61,7 +61,7 @@ Fixed values carried over from the reference implementations, not exposed as env
 | Shutdown drain budget | 8s | Listener: time budget on `SIGTERM`/`SIGINT` to drain the spool before exiting. |
 | Sender close budget | 4s | Listener: time budget (applied twice: once for the queue sender, once for the `ServiceBusClient` itself) on `SIGTERM`/`SIGINT` to close the Service Bus AMQP connection before giving up. |
 | Worker shutdown budget | 30s | Worker: time budget on `SIGTERM`/`SIGINT` to finish the in-flight session before exiting. |
-| Session idle wait | 1s | Worker: how long the pump waits for `NEXT_AVAILABLE_SESSION` before looping; defined once as `hl7poc.worker.SESSION_IDLE_WAIT`. Per-replica throughput is session-bound (receiver setup overhead per session dominates); capacity scales by replica count, not by lowering this further or adding in-process session concurrency. |
+| Session idle wait | 1s | Worker: the receiver's `max_wait_time` — how long the pump waits to acquire a `NEXT_AVAILABLE_SESSION`, and how long a drained session is held idle before it is released; defined once as `hl7poc.worker.SESSION_IDLE_WAIT`. Per-replica throughput is session-bound (one session at a time, with per-session receiver setup overhead); capacity scales by replica count, not in-process session concurrency. |
 | Lock renewal max | 300s | Worker: `AutoLockRenewer`'s maximum lock renewal duration for a session. |
 | Probe read timeout | 3s | Both: timeout for a probe HTTP handler read; defined once as `hl7poc.probe.READ_TIMEOUT`. |
 | Webhook timeout | 5s | Worker: timeout for a webhook POST when `WEBHOOK_URL` is set. |
