@@ -47,6 +47,17 @@ VT, FS, CR = b"\x0b", b"\x1c", b"\x0d"
 # the same way the spool drain below is bounded.
 MLLP_CLOSE_BUDGET = 8
 
+# ServiceBusSender.close() / ServiceBusClient.close() close the underlying
+# AMQP connection, which sends a Close frame and waits on the socket with no
+# client-side timeout of its own. If the broker (or the path to it) has gone
+# unresponsive since the link was established, that wait rides on TCP-level
+# retransmission timers, not an AMQP-level one -- the same unbounded-close
+# shape MLLP_CLOSE_BUDGET bounds above, for the Service Bus side instead.
+# Applied to both closes below, so shutdown's worst case is
+# MLLP_CLOSE_BUDGET + the drain + 2x this, under a typical 30s
+# terminationGracePeriodSeconds.
+SENDER_CLOSE_BUDGET = 4
+
 ForwardFn = Callable[[CanonicalMessage, Path], Awaitable[None]]
 
 
@@ -367,9 +378,8 @@ async def serve(
     state = ListenerState(spool_dir)
     tasks: set[asyncio.Task] = set()
 
-    async with ServiceBusClient.from_connection_string(
-        servicebus_connection
-    ) as sb_client:
+    sb_client = ServiceBusClient.from_connection_string(servicebus_connection)
+    try:
         sender = sb_client.get_queue_sender(servicebus_queue)
         send_lock = asyncio.Lock()
         forward = functools.partial(
@@ -414,7 +424,15 @@ async def serve(
             logger.warning("shutdown drain timed out; spool retained")
         retry.cancel()
         http_server.close()
-        await sender.close()
+        try:
+            await asyncio.wait_for(sender.close(), timeout=SENDER_CLOSE_BUDGET)
+        except TimeoutError:
+            logger.warning("sender close timed out")
+    finally:
+        try:
+            await asyncio.wait_for(sb_client.close(), timeout=SENDER_CLOSE_BUDGET)
+        except TimeoutError:
+            logger.warning("service bus client close timed out")
 
 
 @app.command()

@@ -32,6 +32,7 @@ Fixed values carried over from the reference implementations, not exposed as env
 | Spool retry / drain interval | 5s | Listener: how often the retry loop re-drains the spool. |
 | MLLP close budget | 8s | Listener: time budget on `SIGTERM`/`SIGINT` to wait for already-accepted MLLP connections to close on their own; when it expires the listener force-closes the still-open ones (`close_clients()`), so this stage cannot hang. |
 | Shutdown drain budget | 8s | Listener: time budget on `SIGTERM`/`SIGINT` to drain the spool before exiting. |
+| Sender close budget | 4s | Listener: time budget (applied twice: once for the queue sender, once for the `ServiceBusClient` itself) on `SIGTERM`/`SIGINT` to close the Service Bus AMQP connection before giving up. |
 | Worker shutdown budget | 30s | Worker: time budget on `SIGTERM`/`SIGINT` to finish the in-flight session before exiting. |
 | Session idle wait | 5s | Worker: how long the pump waits for `NEXT_AVAILABLE_SESSION` before looping. |
 | Lock renewal max | 300s | Worker: `AutoLockRenewer`'s maximum lock renewal duration for a session. |
