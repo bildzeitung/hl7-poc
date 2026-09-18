@@ -291,6 +291,70 @@ def test_drain_spool_skips_file_unlinked_between_glob_and_read(tmp_path) -> None
     assert list(rejected_dir.glob("*.hl7")) == []
 
 
+def test_drain_spool_skips_file_a_direct_forward_currently_owns(tmp_path) -> None:
+    """A file process_frame just spooled and scheduled a direct forward for
+    (process_frame -> _forward) must not also be sent by a concurrent
+    drain_spool pass -- otherwise the same frame goes out twice. The
+    in_flight set is how process_frame records that ownership."""
+    spool_dir = tmp_path / "spool"
+    spool_dir.mkdir()
+    rejected_dir = spool_dir / "rejected"
+    owned = spool_dir / "0-owned.hl7"
+    owned.write_bytes(ADT_A01.encode())
+    (spool_dir / "1-free.hl7").write_bytes(ADT_A01.encode())
+    in_flight = {owned}
+
+    drained: list[CanonicalMessage] = []
+
+    async def record(message, file) -> None:
+        drained.append(message)
+
+    asyncio.run(drain_spool(spool_dir, rejected_dir, record, in_flight))
+
+    assert [f.name for f in [owned]] == ["0-owned.hl7"]
+    assert owned.exists()  # never touched by the drain -- the direct forward owns it
+    assert len(drained) == 1
+
+
+def test_process_frame_marks_file_in_flight_until_forward_settles(tmp_path) -> None:
+    """process_frame must add the spool file to `in_flight` before the forward
+    task is scheduled and remove it once the forward settles, so a concurrent
+    drain_spool pass can tell the file is (or is no longer) already owned."""
+    spool_dir = tmp_path / "spool"
+    spool_dir.mkdir()
+    rejected_dir = spool_dir / "rejected"
+    in_flight: set = set()
+    release = asyncio.Event()
+    seen_in_flight = False
+
+    async def stub_forward(message, file) -> None:
+        nonlocal seen_in_flight
+        seen_in_flight = file in in_flight
+        await release.wait()
+
+    async def run() -> asyncio.Task:
+        await process_frame(
+            ADT_A01.encode(),
+            spool_dir=spool_dir,
+            rejected_dir=rejected_dir,
+            forward=stub_forward,
+            tasks=(tasks := set()),
+            in_flight=in_flight,
+        )
+        return next(iter(tasks))
+
+    async def scenario() -> None:
+        task = await run()
+        await asyncio.sleep(0)  # let stub_forward run up to release.wait()
+        assert seen_in_flight
+        assert len(in_flight) == 1
+        release.set()
+        await task
+        assert in_flight == set()
+
+    asyncio.run(scenario())
+
+
 def test_extract_frames_drops_unframed_junk() -> None:
     frames, buf = extract_frames(b"junk with no start block")
 

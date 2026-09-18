@@ -68,8 +68,12 @@ duplicated here.
 (`RequiresDuplicateDetection` stays `true`). The emulator image rejects any value above `PT5M` and
 exits at startup, so `PT5M` is the ceiling, not a chosen retention target.
 
-The window absorbs the listener's double-send — an in-flight forward racing the 5s spool retry
-drain — which lands seconds apart, well inside 5 minutes. Two limits: the message id is MSH-10, so a
-frame without one gets a fresh random id per send and is never deduplicated; and a re-send more than
-5 minutes later (the listener crashed after the broker accepted the send but before the spool file
-was unlinked, and stayed down past the window) is not deduplicated by the broker either.
+This window is a second line of defense, not the mechanism that stops the listener's own
+direct-forward-vs-retry-drain race: the listener tracks, in-process, which spool files a direct
+forward (`process_frame` -> `_forward`) currently owns (`hl7poc.listener`'s `in_flight` set), and the
+5s spool retry drain (`drain_spool`) skips any file still owned rather than forwarding it a second
+time. This closes the race regardless of whether MSH-10 is populated. The broker's duplicate
+detection still matters for what the in-process guard cannot cover: a re-send after a listener crash
+that lands more than 5 minutes after the original send is not deduplicated (and never was), and a
+frame with no MSH-10 falls back to a fresh random message id per send (`build_service_bus_message`),
+so it also would not be deduplicated by the broker alone.
