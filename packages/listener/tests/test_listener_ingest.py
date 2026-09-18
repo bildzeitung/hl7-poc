@@ -354,6 +354,74 @@ def test_process_frame_marks_file_in_flight_until_forward_settles(tmp_path) -> N
     asyncio.run(scenario())
 
 
+def test_serve_shutdown_does_not_double_send_a_file_retry_loop_is_mid_draining(
+    monkeypatch: pytest.MonkeyPatch, tmp_path
+) -> None:
+    """Regression for hl7-poc-8g2: serve() must fully stop retry_loop (cancel
+    + await) before _final_drain runs its own drain_spool pass. Without that
+    ordering, retry_loop can still be mid-send for a spool file when
+    _final_drain globs the same, still-present file and sends it again."""
+    spool_dir = tmp_path / "spool"
+    spool_dir.mkdir()
+    (spool_dir / "0.hl7").write_bytes(ADT_A01.encode())
+
+    started = 0
+    completed = 0
+    retry_loop_send_may_finish = asyncio.Event()
+
+    class FakeSender:
+        async def send_messages(self, message) -> None:
+            nonlocal started, completed
+            started += 1
+            if started == 1:
+                # This is retry_loop's send, already in flight when SIGTERM
+                # arrives -- hold it open until after the test has driven
+                # serve() through cancelling retry_loop.
+                await retry_loop_send_may_finish.wait()
+            completed += 1
+
+        async def close(self) -> None:
+            pass
+
+    class FakeClient:
+        def get_queue_sender(self, queue: str) -> FakeSender:
+            return FakeSender()
+
+        async def close(self) -> None:
+            pass
+
+    monkeypatch.setattr(
+        "hl7poc.listener.ServiceBusClient.from_connection_string",
+        lambda *a, **k: FakeClient(),
+    )
+
+    async def run() -> None:
+        serve_task = asyncio.create_task(
+            serve(
+                mllp_port=0,
+                http_port=0,
+                servicebus_connection="Endpoint=sb://unused/;SharedAccessKeyName=x;SharedAccessKey=x",
+                servicebus_queue="q",
+                spool_dir=spool_dir,
+            )
+        )
+        while started == 0:  # let retry_loop's first drain reach send_messages
+            await asyncio.sleep(0)
+
+        os.kill(os.getpid(), signal.SIGTERM)
+        # Pass/fail on the fixed code does not depend on this delay (the held
+        # send is either cancelled or completes first); the delay only lets an
+        # unfixed serve() start _final_drain's second send of the same file.
+        await asyncio.sleep(0.1)
+        retry_loop_send_may_finish.set()
+        await asyncio.wait_for(serve_task, timeout=5)
+
+    asyncio.run(run())
+
+    assert completed == 1
+    assert not (spool_dir / "0.hl7").exists()
+
+
 def test_extract_frames_drops_unframed_junk() -> None:
     frames, buf = extract_frames(b"junk with no start block")
 
