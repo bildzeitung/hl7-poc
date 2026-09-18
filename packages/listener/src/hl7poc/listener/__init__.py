@@ -286,7 +286,14 @@ async def drain_spool(spool_dir: Path, rejected_dir: Path, forward: ForwardFn) -
         # undecodable bytes (process_frame writes durably before it decodes);
         # an escaping UnicodeDecodeError would abort the entire drain pass.
         try:
-            raw = file.read_bytes().decode("utf-8")
+            raw_bytes = file.read_bytes()
+        except FileNotFoundError:
+            # A concurrent direct-forward task (process_frame -> _forward) already
+            # sent and unlinked this file between glob() and this read: it is not
+            # an unusable frame, it already made it out via the other path.
+            continue
+        try:
+            raw = raw_bytes.decode("utf-8")
             message = parse_message(raw)
         except (TransformError, UnicodeDecodeError) as err:
             logger.error("drain: unusable frame, rejecting %s: %s", file.name, err)

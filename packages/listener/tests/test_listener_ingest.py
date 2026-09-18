@@ -263,6 +263,34 @@ def test_drain_spool_rejects_undecodable_file_without_aborting_the_pass(
     assert [f.name for f in rejected_dir.glob("*.hl7")] == ["0-bad.hl7"]
 
 
+def test_drain_spool_skips_file_unlinked_between_glob_and_read(tmp_path) -> None:
+    """A concurrent direct-forward task (process_frame -> _forward) can unlink a
+    spooled file between drain_spool's glob() and its read_bytes() for that same
+    file. That file already made it out via the other path -- drain_spool must
+    skip it silently, not raise FileNotFoundError and abort the pass."""
+    spool_dir = tmp_path / "spool"
+    spool_dir.mkdir()
+    rejected_dir = spool_dir / "rejected"
+    vanished = spool_dir / "1-vanished.hl7"
+    (spool_dir / "0-good.hl7").write_bytes(ADT_A01.encode())
+    vanished.write_bytes(ADT_A01.encode())
+
+    drained: list[CanonicalMessage] = []
+
+    async def record(message, file) -> None:
+        drained.append(message)
+        if file.name == "0-good.hl7":
+            # Simulate the concurrent direct-forward's unlink landing between
+            # drain_spool's glob() (which already listed "1-vanished.hl7") and
+            # the loop reaching it.
+            vanished.unlink()
+
+    asyncio.run(drain_spool(spool_dir, rejected_dir, record))
+
+    assert [m.patient.mrn for m in drained] == ["MRN123"]
+    assert list(rejected_dir.glob("*.hl7")) == []
+
+
 def test_extract_frames_drops_unframed_junk() -> None:
     frames, buf = extract_frames(b"junk with no start block")
 
