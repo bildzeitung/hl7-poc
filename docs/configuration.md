@@ -34,14 +34,20 @@ Typer `Annotated` option backed by an environment variable (see
 | `SPOOL_DIR` | `--spool-dir` | `./spool` | Spool directory the dashboard counts `*.hl7` files in. |
 | `BUS_HEALTH_URL` | `--bus-health-url` | `http://localhost:5300/health` | Bus emulator `/health` URL the dashboard polls into `/api/status`. |
 
-`/api/status`'s `queue_depth` has no CLI knob of its own -- it is always `max(0, forwarded_total -
+`/api/status`'s `queue_depth` has no CLI knob of its own -- it is `max(0, forwarded_total -
 handled_total)`, DERIVED rather than queried, because the Service Bus emulator has no working
 admin/runtime-properties API for queue depth (spiked 2026-09-18: `ServiceBusAdministrationClient`
 targets a management HTTPS port the emulator never opens, and its `:5300` admin port's
 `MessageCount` field doesn't update on send). `forwarded_total` comes from the listener's
 `FORWARDED_REPORT_URL` (above); `handled_total` is the worker's `REPORT_URL`-fed completed+dead_lettered count
-(see Worker row above). See `hl7poc.dashboard.status.derive_queue_depth`'s docstring for the full
-accuracy caveats.
+(see Worker row above).
+
+`queue_depth.value` is withheld (`null`, `method: "unknown"`, page shows "unknown" with no "ok"
+styling) rather than shown with false confidence in two cases: the bus is down (`bus.ok` is
+`false` -- the listener spools instead of forwarding, so the derived total would silently stop
+growing); or `forwarded_total == 0` while `handled_total > 0`, meaning the listener evidently
+isn't reporting at all (`FORWARDED_REPORT_URL` unset, or a restart). See
+`hl7poc.dashboard.status.derive_queue_depth`'s docstring for the full accuracy caveats.
 
 ## Build constants
 

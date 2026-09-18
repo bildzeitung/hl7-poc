@@ -137,7 +137,7 @@ def test_assemble_status_not_ready_503_keeps_flags(tmp_path: Path) -> None:
 
 
 def test_derive_queue_depth_subtracts_handled_from_forwarded() -> None:
-    result = derive_queue_depth(forwarded_total=10, handled_total=7)
+    result = derive_queue_depth(forwarded_total=10, handled_total=7, bus_ok=True)
 
     assert result == {
         "value": 3,
@@ -150,6 +150,37 @@ def test_derive_queue_depth_subtracts_handled_from_forwarded() -> None:
 def test_derive_queue_depth_never_goes_negative() -> None:
     # handled_total can exceed forwarded_total after a listener restart
     # resets its counter while the worker's keeps counting.
-    result = derive_queue_depth(forwarded_total=2, handled_total=5)
+    result = derive_queue_depth(forwarded_total=2, handled_total=5, bus_ok=True)
 
     assert result["value"] == 0
+
+
+def test_derive_queue_depth_unknown_when_bus_down() -> None:
+    # The listener spools instead of forwarding while the bus is down, so the
+    # derived total would silently stop growing -- withhold it rather than
+    # show a stale/misleading number.
+    result = derive_queue_depth(forwarded_total=10, handled_total=7, bus_ok=False)
+
+    assert result["value"] is None
+    assert result["method"] == "unknown"
+    assert result["reason"] == "bus down"
+
+
+def test_derive_queue_depth_unknown_when_listener_not_reporting() -> None:
+    # forwarded_total stuck at 0 while handled_total > 0 means the listener
+    # evidently isn't reporting at all (FORWARDED_REPORT_URL unset, or a
+    # restart), not that the queue is actually empty.
+    result = derive_queue_depth(forwarded_total=0, handled_total=3, bus_ok=True)
+
+    assert result["value"] is None
+    assert result["method"] == "unknown"
+    assert result["reason"] == "listener not reporting"
+
+
+def test_derive_queue_depth_zero_forwarded_and_handled_is_not_unknown() -> None:
+    # forwarded_total == 0 and handled_total == 0 is the ordinary startup
+    # state (nothing has happened yet), not evidence of a broken listener.
+    result = derive_queue_depth(forwarded_total=0, handled_total=0, bus_ok=True)
+
+    assert result["value"] == 0
+    assert result["method"] == "derived"

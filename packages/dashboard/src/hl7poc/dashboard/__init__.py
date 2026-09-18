@@ -95,11 +95,17 @@ async function poll() {
     setRow("bus", data.bus.ok, data.bus.fields
       ? JSON.stringify(data.bus.fields) : data.bus.error);
     const queueDepthState = document.getElementById("queue-depth-state");
-    queueDepthState.textContent = String(data.queue_depth.value);
-    queueDepthState.className = "ok";
+    if (data.queue_depth.value === null) {
+      queueDepthState.textContent = "unknown";
+      queueDepthState.className = "unknown";
+    } else {
+      queueDepthState.textContent = String(data.queue_depth.value);
+      queueDepthState.className = "ok";
+    }
     document.getElementById("queue-depth-detail").textContent =
       "forwarded " + data.queue_depth.forwarded_total +
-      " - handled " + data.queue_depth.handled_total;
+      " - handled " + data.queue_depth.handled_total +
+      (data.queue_depth.reason ? " (" + data.queue_depth.reason + ")" : "");
     const handledState = document.getElementById("handled-state");
     handledState.textContent =
       data.handled.completed + " / " + data.handled.dead_lettered;
@@ -208,7 +214,9 @@ async def handle_http(
             )
             fields["handled"] = handled_store.snapshot()
             fields["queue_depth"] = derive_queue_depth(
-                forwarded_store.total, fields["handled"]["total"]
+                forwarded_store.total,
+                fields["handled"]["total"],
+                bus_ok=fields["bus"]["ok"],
             )
             status = "200 OK"
             content_type = "application/json"

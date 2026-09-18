@@ -1,6 +1,9 @@
 import asyncio
 import json
+import urllib.error
+from io import BytesIO
 from pathlib import Path
+from unittest.mock import patch
 
 from hl7poc.dashboard import handle_http
 from hl7poc.dashboard.forwarded import ForwardedStore
@@ -222,12 +225,18 @@ def test_api_status_includes_queue_depth(tmp_path: Path) -> None:
     forwarded_store.record()
     reader = _FakeReader([b"GET /api/status HTTP/1.1\r\n", b"\r\n"])
 
-    writer = _serve(
-        reader,
-        spool_dir=tmp_path,
-        handled_store=handled_store,
-        forwarded_store=forwarded_store,
-    )
+    def fake_urlopen(url, timeout=None):
+        return BytesIO(json.dumps({"status": "healthy"}).encode())
+
+    with patch(
+        "hl7poc.dashboard.status.urllib.request.urlopen", side_effect=fake_urlopen
+    ):
+        writer = _serve(
+            reader,
+            spool_dir=tmp_path,
+            handled_store=handled_store,
+            forwarded_store=forwarded_store,
+        )
 
     body = writer.written.split(b"\r\n\r\n", 1)[1]
     fields = json.loads(body)
@@ -237,3 +246,66 @@ def test_api_status_includes_queue_depth(tmp_path: Path) -> None:
         "forwarded_total": 3,
         "handled_total": 1,
     }
+
+
+def test_api_status_queue_depth_unknown_when_bus_down(tmp_path: Path) -> None:
+    handled_store = HandledStore(10)
+    handled_store.record({"outcome": "completed"})
+    forwarded_store = ForwardedStore()
+    forwarded_store.record()
+    forwarded_store.record()
+    forwarded_store.record()
+    reader = _FakeReader([b"GET /api/status HTTP/1.1\r\n", b"\r\n"])
+
+    def fake_urlopen(url, timeout=None):
+        if "5300" in url:
+            raise urllib.error.URLError("connection refused")
+        return BytesIO(json.dumps({"mllp_listening": True}).encode())
+
+    with patch(
+        "hl7poc.dashboard.status.urllib.request.urlopen", side_effect=fake_urlopen
+    ):
+        writer = _serve(
+            reader,
+            spool_dir=tmp_path,
+            handled_store=handled_store,
+            forwarded_store=forwarded_store,
+        )
+
+    body = writer.written.split(b"\r\n\r\n", 1)[1]
+    fields = json.loads(body)
+    assert fields["bus"]["ok"] is False
+    assert fields["queue_depth"]["value"] is None
+    assert fields["queue_depth"]["method"] == "unknown"
+    assert fields["queue_depth"]["reason"] == "bus down"
+
+
+def test_api_status_queue_depth_unknown_when_listener_not_reporting(
+    tmp_path: Path,
+) -> None:
+    # forwarded_total stuck at 0 while handled_total > 0 means the listener
+    # evidently isn't reporting (FORWARDED_REPORT_URL unset, or restarted).
+    handled_store = HandledStore(10)
+    handled_store.record({"outcome": "completed"})
+    forwarded_store = ForwardedStore()
+    reader = _FakeReader([b"GET /api/status HTTP/1.1\r\n", b"\r\n"])
+
+    def fake_urlopen(url, timeout=None):
+        return BytesIO(json.dumps({"status": "healthy"}).encode())
+
+    with patch(
+        "hl7poc.dashboard.status.urllib.request.urlopen", side_effect=fake_urlopen
+    ):
+        writer = _serve(
+            reader,
+            spool_dir=tmp_path,
+            handled_store=handled_store,
+            forwarded_store=forwarded_store,
+        )
+
+    body = writer.written.split(b"\r\n\r\n", 1)[1]
+    fields = json.loads(body)
+    assert fields["bus"]["ok"] is True
+    assert fields["queue_depth"]["value"] is None
+    assert fields["queue_depth"]["method"] == "unknown"
+    assert fields["queue_depth"]["reason"] == "listener not reporting"

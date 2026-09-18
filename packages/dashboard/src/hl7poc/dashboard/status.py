@@ -48,7 +48,9 @@ def spool_status(spool_dir: Path) -> dict[str, Any]:
         return {"ok": False, "error": str(err)}
 
 
-def derive_queue_depth(forwarded_total: int, handled_total: int) -> dict[str, Any]:
+def derive_queue_depth(
+    forwarded_total: int, handled_total: int, *, bus_ok: bool
+) -> dict[str, Any]:
     """Approximate hl7-events depth as forwarded-but-not-yet-handled.
 
     There is no working way to read this from the Service Bus emulator
@@ -68,7 +70,31 @@ def derive_queue_depth(forwarded_total: int, handled_total: int) -> dict[str, An
     message in the brief window between a forward and its eventual handling
     -- both make this an approximation, not an exact depth, which is why it
     is always labelled "derived" rather than a queried value like bus/listener.
+
+    The estimate is withheld (value=None, method="unknown") rather than shown
+    with false confidence in two cases: the bus is down (bus_ok=False) -- the
+    listener spools instead of forwarding, so the derived total silently stops
+    growing and would show a stale/misleadingly-shrinking number; or
+    forwarded_total is 0 while handled_total > 0, which means the listener
+    evidently isn't reporting (FORWARDED_REPORT_URL unset, or a restart) and
+    any subtraction against it is meaningless, not just imprecise.
     """
+    if not bus_ok:
+        return {
+            "value": None,
+            "method": "unknown",
+            "reason": "bus down",
+            "forwarded_total": forwarded_total,
+            "handled_total": handled_total,
+        }
+    if forwarded_total == 0 and handled_total > 0:
+        return {
+            "value": None,
+            "method": "unknown",
+            "reason": "listener not reporting",
+            "forwarded_total": forwarded_total,
+            "handled_total": handled_total,
+        }
     value = max(0, forwarded_total - handled_total)
     return {
         "value": value,
