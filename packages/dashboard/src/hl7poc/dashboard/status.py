@@ -15,7 +15,7 @@ import urllib.request
 from pathlib import Path
 from typing import Any
 
-FETCH_TIMEOUT = 3  # seconds; matches hl7poc.probe.READ_TIMEOUT on the other side
+from hl7poc.probe import READ_TIMEOUT as FETCH_TIMEOUT
 
 
 def _fetch_json(url: str) -> dict[str, Any]:

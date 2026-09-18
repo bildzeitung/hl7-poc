@@ -25,11 +25,10 @@ from typing import Annotated
 import typer
 
 from hl7poc.dashboard.status import assemble_status
+from hl7poc.probe import READ_TIMEOUT
 
 app = typer.Typer(add_completion=False)
 logger = logging.getLogger(__name__)
-
-READ_TIMEOUT = 3  # seconds; matches hl7poc.probe.READ_TIMEOUT
 
 INDEX_HTML = b"""<!doctype html>
 <html lang="en">
