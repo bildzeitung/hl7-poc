@@ -21,6 +21,7 @@ import logging
 import signal
 import sys
 import urllib.request
+from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
 from typing import Annotated
 
@@ -33,6 +34,12 @@ from hl7poc.model import CanonicalMessage
 from hl7poc.probe import handle_http
 
 app = typer.Typer(add_completion=False)
+logger = logging.getLogger(__name__)
+
+REPORT_TIMEOUT = 2  # seconds; see docs/configuration.md's "Report timeout" row
+# Own single thread so a slow dashboard queues reports here instead of starving
+# the default executor that the awaited webhook push runs on.
+_REPORT_EXECUTOR = ThreadPoolExecutor(max_workers=1, thread_name_prefix="report")
 
 _SIU_TITLES = {
     "S12": "Appointment booked",
@@ -74,7 +81,40 @@ def push(payload: dict, webhook_url: str | None) -> None:
         print(f"PUSH -> {body.decode()}")
 
 
-async def handle(receiver, msg, webhook_url: str | None) -> None:
+def report(event: dict, report_url: str) -> None:
+    """POST a handled-message event to the dashboard. Never raises."""
+    body = json.dumps(event).encode()
+    req = urllib.request.Request(
+        report_url, data=body, headers={"Content-Type": "application/json"}
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=REPORT_TIMEOUT):
+            pass
+    except Exception as err:  # noqa: BLE001 - http.client errors are not all OSError
+        logger.warning("report to dashboard failed: %s", err)
+
+
+def _report_event(
+    model: CanonicalMessage | None, msg, outcome: str, *, notified: bool
+) -> dict:
+    mrn = (model.patient.mrn or "unknown") if model else "unknown"
+    msg_type = f"{model.header.msg_type}^{model.header.event}" if model else "unknown"
+    return {
+        "mrn": mrn,
+        "session_id": getattr(msg, "session_id", None),
+        "msg_type": msg_type,
+        "outcome": outcome,
+        "notified": notified,
+        "reported_at": datetime.now(UTC).isoformat(),
+    }
+
+
+async def handle(
+    receiver, msg, webhook_url: str | None, report_url: str | None = None
+) -> None:
+    model: CanonicalMessage | None = None
+    notified = False
+    outcome = "completed"
     try:
         raw = b"".join(msg.body).decode("utf-8")  # strict: the worker is the last hop
         model = CanonicalMessage.from_json(raw)
@@ -83,15 +123,24 @@ async def handle(receiver, msg, webhook_url: str | None) -> None:
             await asyncio.get_running_loop().run_in_executor(
                 None, push, payload, webhook_url
             )
+            notified = True
         await receiver.complete_message(msg)
         if payload:
             print(f"notified mrn={payload['mrn']} ({payload['source_event']})")
     except ServiceBusError:
         raise  # settlement/link problems: let the outer loop rebuild the session
     except Exception as err:  # noqa: BLE001 - poison message, don't loop on it
+        outcome = "dead_lettered"
         print(f"dead-lettering {msg.message_id}: {err}", file=sys.stderr)
         await receiver.dead_letter_message(
             msg, reason="ProcessingError", error_description=str(err)[:512]
+        )
+    if report_url:
+        event = _report_event(model, msg, outcome, notified=notified)
+        # Deliberately not awaited: settlement is done, and the next message must
+        # not wait up to REPORT_TIMEOUT on a slow or blackholed dashboard.
+        asyncio.get_running_loop().run_in_executor(
+            _REPORT_EXECUTOR, report, event, report_url
         )
 
 
@@ -101,6 +150,7 @@ async def pump(
     queue: str,
     webhook_url: str | None,
     stop_event: asyncio.Event,
+    report_url: str | None = None,
 ) -> None:
     while not stop_event.is_set():
         try:
@@ -115,7 +165,7 @@ async def pump(
                 )
                 print(f"session accepted: {receiver.session.session_id}")
                 async for msg in receiver:
-                    await handle(receiver, msg, webhook_url)
+                    await handle(receiver, msg, webhook_url, report_url)
         except OperationTimeoutError:
             await asyncio.sleep(1)  # no sessions with messages right now
         except ServiceBusError as err:
@@ -128,6 +178,7 @@ async def _serve(
     servicebus_queue: str,
     webhook_url: str | None,
     http_port: int,
+    report_url: str | None = None,
 ) -> None:
     stop_event = asyncio.Event()
     loop = asyncio.get_running_loop()
@@ -143,7 +194,14 @@ async def _serve(
         ) as client:
             renewer = AutoLockRenewer()
             pump_task = asyncio.create_task(
-                pump(client, renewer, servicebus_queue, webhook_url, stop_event)
+                pump(
+                    client,
+                    renewer,
+                    servicebus_queue,
+                    webhook_url,
+                    stop_event,
+                    report_url,
+                )
             )
             stop_wait_task = asyncio.create_task(stop_event.wait())
             try:
@@ -170,7 +228,12 @@ def main(
     ] = "hl7-events",
     webhook_url: Annotated[str | None, typer.Option(envvar="WEBHOOK_URL")] = None,
     http_port: Annotated[int, typer.Option(envvar="HTTP_PORT")] = 8081,
+    report_url: Annotated[str | None, typer.Option(envvar="REPORT_URL")] = None,
 ) -> None:
     """Start the HL7 worker."""
     logging.basicConfig(level=logging.INFO)
-    asyncio.run(_serve(servicebus_connection, servicebus_queue, webhook_url, http_port))
+    asyncio.run(
+        _serve(
+            servicebus_connection, servicebus_queue, webhook_url, http_port, report_url
+        )
+    )

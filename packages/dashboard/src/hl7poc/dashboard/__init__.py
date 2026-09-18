@@ -20,15 +20,21 @@ import logging
 import signal
 import sys
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Any
 
 import typer
 
+from hl7poc.dashboard.handled import HandledStore
 from hl7poc.dashboard.status import assemble_status
 from hl7poc.probe import READ_TIMEOUT
 
 app = typer.Typer(add_completion=False)
 logger = logging.getLogger(__name__)
+
+HANDLED_RING_SIZE = 50  # last-N events kept in memory; see docs/configuration.md
+MAX_HANDLED_BODY = 64 * 1024  # bytes; bounds what one POST can pin in the ring
+_OUTCOMES = frozenset({"completed", "dead_lettered"})
+_EVENT_FIELDS = ("mrn", "session_id", "msg_type", "outcome", "notified", "reported_at")
 
 INDEX_HTML = b"""<!doctype html>
 <html lang="en">
@@ -53,6 +59,11 @@ INDEX_HTML = b"""<!doctype html>
   <tr><td>Listener /ready</td><td id="listener-state">unknown</td><td id="listener-detail"></td></tr>
   <tr><td>Spool count</td><td id="spool-state">unknown</td><td id="spool-detail"></td></tr>
   <tr><td>Bus /health</td><td id="bus-state">unknown</td><td id="bus-detail"></td></tr>
+  <tr><td>Handled (completed / dead-lettered)</td><td id="handled-state">unknown</td><td id="handled-detail"></td></tr>
+</table>
+<h2>Last handled</h2>
+<table id="handled-events">
+  <tr><th>Reported at</th><th>MRN</th><th>Type</th><th>Outcome</th><th>Notified</th></tr>
 </table>
 <p id="updated"></p>
 <script>
@@ -74,6 +85,20 @@ async function poll() {
       ? String(data.spool.count) : data.spool.error);
     setRow("bus", data.bus.ok, data.bus.fields
       ? JSON.stringify(data.bus.fields) : data.bus.error);
+    const handledState = document.getElementById("handled-state");
+    handledState.textContent =
+      data.handled.completed + " / " + data.handled.dead_lettered;
+    handledState.className = "ok";
+    document.getElementById("handled-detail").textContent =
+      "total " + data.handled.total;
+    const events = document.getElementById("handled-events");
+    while (events.rows.length > 1) events.deleteRow(1);
+    for (const e of data.handled.events.slice().reverse()) {
+      const row = events.insertRow();
+      for (const v of [e.reported_at, e.mrn, e.msg_type, e.outcome, e.notified]) {
+        row.insertCell().textContent = String(v);
+      }
+    }
     document.getElementById("updated").textContent =
       "updated " + new Date().toLocaleTimeString();
   } catch (err) {
@@ -89,6 +114,17 @@ setInterval(poll, 2000);
 """
 
 
+def _parse_handled_event(raw: bytes) -> dict[str, Any] | None:
+    """Parse a POST /api/handled body. Returns None on anything malformed."""
+    try:
+        event = json.loads(raw)
+    except ValueError:
+        return None
+    if not isinstance(event, dict) or event.get("outcome") not in _OUTCOMES:
+        return None
+    return {k: event.get(k) for k in _EVENT_FIELDS}
+
+
 async def handle_http(
     reader: asyncio.StreamReader,
     writer: asyncio.StreamWriter,
@@ -96,12 +132,42 @@ async def handle_http(
     listener_ready_url: str,
     spool_dir: Path,
     bus_health_url: str,
+    handled_store: HandledStore,
 ) -> None:
-    """Serve GET / (the static page) and GET /api/status (JSON)."""
+    """Serve GET / (the page), GET /api/status (JSON), POST /api/handled."""
     try:
         request_line = await asyncio.wait_for(reader.readline(), timeout=READ_TIMEOUT)
-        path = request_line.split(b" ")[1].decode() if b" " in request_line else "/"
-        if path == "/":
+        parts = request_line.split(b" ")
+        method = parts[0].decode() if parts else "GET"
+        path = parts[1].decode() if len(parts) > 1 else "/"
+
+        content_length = 0
+        while True:
+            header_line = await asyncio.wait_for(
+                reader.readline(), timeout=READ_TIMEOUT
+            )
+            if header_line in (b"\r\n", b""):
+                break
+            name, _, value = header_line.partition(b":")
+            if name.strip().lower() == b"content-length":
+                try:
+                    content_length = int(value.strip())
+                except ValueError:
+                    content_length = -1
+
+        if method == "POST" and path == "/api/handled":
+            event = None
+            if 0 <= content_length <= MAX_HANDLED_BODY:
+                raw_body = await asyncio.wait_for(
+                    reader.readexactly(content_length), timeout=READ_TIMEOUT
+                )
+                event = _parse_handled_event(raw_body)
+            if event is None:
+                status, content_type, body = "400 Bad Request", "text/plain", b""
+            else:
+                handled_store.record(event)
+                status, content_type, body = "204 No Content", "text/plain", b""
+        elif path == "/":
             status = "200 OK"
             content_type = "text/html; charset=utf-8"
             body = INDEX_HTML
@@ -114,6 +180,7 @@ async def handle_http(
                 spool_dir=spool_dir,
                 bus_health_url=bus_health_url,
             )
+            fields["handled"] = handled_store.snapshot()
             status = "200 OK"
             content_type = "application/json"
             body = json.dumps(fields).encode()
@@ -125,7 +192,7 @@ async def handle_http(
             + body
         )
         await writer.drain()
-    except TimeoutError, IndexError, ConnectionResetError:
+    except TimeoutError, IndexError, ConnectionResetError, asyncio.IncompleteReadError:
         pass
     finally:
         writer.close()
@@ -138,12 +205,14 @@ async def serve(
     spool_dir: Path,
     bus_health_url: str,
 ) -> None:
+    handled_store = HandledStore(HANDLED_RING_SIZE)
     server = await asyncio.start_server(
         functools.partial(
             handle_http,
             listener_ready_url=listener_ready_url,
             spool_dir=spool_dir,
             bus_health_url=bus_health_url,
+            handled_store=handled_store,
         ),
         "0.0.0.0",
         port,
