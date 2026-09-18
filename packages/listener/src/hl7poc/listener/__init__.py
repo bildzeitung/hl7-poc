@@ -462,6 +462,12 @@ async def serve(
         # k8s: flip /ready to 503 first so traffic stops routing, then drain.
         state.shutting_down = True
         await _close_mllp_server(mllp_server)
+        # retry_loop must be fully stopped before _final_drain's own
+        # drain_spool call starts -- otherwise both can be mid-drain_spool
+        # at once and forward the same spool file twice (in_flight only
+        # covers direct forwards, not two concurrent drain_spool passes).
+        retry.cancel()
+        await asyncio.gather(retry, return_exceptions=True)
         try:
             await asyncio.wait_for(
                 _final_drain(tasks, spool_dir, rejected_dir, forward, in_flight),
@@ -469,7 +475,6 @@ async def serve(
             )
         except TimeoutError:
             logger.warning("shutdown drain timed out; spool retained")
-        retry.cancel()
         http_server.close()
         try:
             await asyncio.wait_for(sender.close(), timeout=SENDER_CLOSE_BUDGET)
