@@ -1,11 +1,18 @@
 """hl7dashboard: single-page status view for the by-hand full-chain demo.
 
 Stdlib HTTP only -- no web framework, mirroring hl7poc.probe. Serves GET /
-(a static HTML page whose inline JS polls /api/status every ~2s) and GET
-/api/status (JSON, built by hl7poc.dashboard.status.assemble_status). This
-process only READS the listener's /ready, the spool dir, and the bus
-emulator's /health -- it never affects listener/worker behaviour, and a
-source being unreachable never turns into a 500 (see status.py).
+(a static HTML page whose inline JS polls /api/status every ~2s), GET
+/api/status (JSON, built by hl7poc.dashboard.status.assemble_status), POST
+/api/handled and POST /api/forwarded. This process only READS the
+listener's /ready, the spool dir, and the bus emulator's /health -- it
+never affects listener/worker behaviour, and a source being unreachable
+never turns into a 500 (see status.py).
+
+/api/status's queue_depth is DERIVED, not queried from the bus: the Service
+Bus emulator has no working admin API for queue depth (see
+hl7poc.dashboard.status.derive_queue_depth's docstring), so it is instead
+computed from the listener's forwarded-message total (POST /api/forwarded)
+minus the worker's handled total (POST /api/handled).
 
 No import-time side effects: every env-derived value is a CLI option
 resolved when the command runs, not at module scope.
@@ -24,8 +31,9 @@ from typing import Annotated, Any
 
 import typer
 
+from hl7poc.dashboard.forwarded import ForwardedStore
 from hl7poc.dashboard.handled import HandledStore
-from hl7poc.dashboard.status import assemble_status
+from hl7poc.dashboard.status import assemble_status, derive_queue_depth
 from hl7poc.probe import READ_TIMEOUT
 
 app = typer.Typer(add_completion=False)
@@ -59,6 +67,7 @@ INDEX_HTML = b"""<!doctype html>
   <tr><td>Listener /ready</td><td id="listener-state">unknown</td><td id="listener-detail"></td></tr>
   <tr><td>Spool count</td><td id="spool-state">unknown</td><td id="spool-detail"></td></tr>
   <tr><td>Bus /health</td><td id="bus-state">unknown</td><td id="bus-detail"></td></tr>
+  <tr><td>Queue depth (derived)</td><td id="queue-depth-state">unknown</td><td id="queue-depth-detail"></td></tr>
   <tr><td>Handled (completed / dead-lettered)</td><td id="handled-state">unknown</td><td id="handled-detail"></td></tr>
 </table>
 <h2>Last handled</h2>
@@ -85,6 +94,18 @@ async function poll() {
       ? String(data.spool.count) : data.spool.error);
     setRow("bus", data.bus.ok, data.bus.fields
       ? JSON.stringify(data.bus.fields) : data.bus.error);
+    const queueDepthState = document.getElementById("queue-depth-state");
+    if (data.queue_depth.value === null) {
+      queueDepthState.textContent = "unknown";
+      queueDepthState.className = "unknown";
+    } else {
+      queueDepthState.textContent = String(data.queue_depth.value);
+      queueDepthState.className = "ok";
+    }
+    document.getElementById("queue-depth-detail").textContent =
+      "forwarded " + data.queue_depth.forwarded_total +
+      " - handled " + data.queue_depth.handled_total +
+      (data.queue_depth.reason ? " (" + data.queue_depth.reason + ")" : "");
     const handledState = document.getElementById("handled-state");
     handledState.textContent =
       data.handled.completed + " / " + data.handled.dead_lettered;
@@ -133,8 +154,10 @@ async def handle_http(
     spool_dir: Path,
     bus_health_url: str,
     handled_store: HandledStore,
+    forwarded_store: ForwardedStore,
 ) -> None:
-    """Serve GET / (the page), GET /api/status (JSON), POST /api/handled."""
+    """Serve GET / (the page), GET /api/status (JSON), POST /api/handled,
+    POST /api/forwarded."""
     try:
         request_line = await asyncio.wait_for(reader.readline(), timeout=READ_TIMEOUT)
         parts = request_line.split(b" ")
@@ -167,6 +190,15 @@ async def handle_http(
             else:
                 handled_store.record(event)
                 status, content_type, body = "204 No Content", "text/plain", b""
+        elif method == "POST" and path == "/api/forwarded":
+            if 0 <= content_length <= MAX_HANDLED_BODY:
+                await asyncio.wait_for(
+                    reader.readexactly(content_length), timeout=READ_TIMEOUT
+                )
+                forwarded_store.record()
+                status, content_type, body = "204 No Content", "text/plain", b""
+            else:
+                status, content_type, body = "400 Bad Request", "text/plain", b""
         elif path == "/":
             status = "200 OK"
             content_type = "text/html; charset=utf-8"
@@ -181,6 +213,11 @@ async def handle_http(
                 bus_health_url=bus_health_url,
             )
             fields["handled"] = handled_store.snapshot()
+            fields["queue_depth"] = derive_queue_depth(
+                forwarded_store.total,
+                fields["handled"]["total"],
+                bus_ok=fields["bus"]["ok"],
+            )
             status = "200 OK"
             content_type = "application/json"
             body = json.dumps(fields).encode()
@@ -206,6 +243,7 @@ async def serve(
     bus_health_url: str,
 ) -> None:
     handled_store = HandledStore(HANDLED_RING_SIZE)
+    forwarded_store = ForwardedStore()
     server = await asyncio.start_server(
         functools.partial(
             handle_http,
@@ -213,6 +251,7 @@ async def serve(
             spool_dir=spool_dir,
             bus_health_url=bus_health_url,
             handled_store=handled_store,
+            forwarded_store=forwarded_store,
         ),
         "0.0.0.0",
         port,

@@ -13,6 +13,7 @@ Typer `Annotated` option backed by an environment variable (see
 | `SERVICEBUS_CONNECTION` | `--servicebus-connection` | none (required) | Connection string for the Service Bus namespace (or emulator) the listener forwards to. |
 | `SERVICEBUS_QUEUE` | `--servicebus-queue` | `hl7-events` | Queue the listener forwards canonical model JSON to. |
 | `SPOOL_DIR` | `--spool-dir` | `./spool` locally, `/spool` in the container image | Directory raw HL7 frames are durably spooled to before forwarding. |
+| `FORWARDED_REPORT_URL` | `--report-url` | none (no reporting) | Full URL of the dashboard's `POST /api/forwarded` endpoint the listener fire-and-forgets an empty event to after each successful forward; when unset, no HTTP call is made at all. Feeds the dashboard's derived queue-depth estimate (see Dashboard row below). Deliberately NOT named `REPORT_URL`: that is the worker's `/api/handled` knob, and one shared exported value would silently count handled events as forwarded. |
 
 ## Worker (`hl7worker`)
 
@@ -28,10 +29,26 @@ Typer `Annotated` option backed by an environment variable (see
 
 | Env var | CLI option | Default | Meaning |
 |---|---|---|---|
-| `DASHBOARD_PORT` | `--port` | `8082` | Port the dashboard serves `/`, `/api/status` and `POST /api/handled` on. |
+| `DASHBOARD_PORT` | `--port` | `8082` | Port the dashboard serves `/`, `/api/status`, `POST /api/handled` and `POST /api/forwarded` on. |
 | `LISTENER_READY_URL` | `--listener-ready-url` | `http://localhost:8080/ready` | Listener `/ready` URL the dashboard polls into `/api/status`. |
 | `SPOOL_DIR` | `--spool-dir` | `./spool` | Spool directory the dashboard counts `*.hl7` files in. |
 | `BUS_HEALTH_URL` | `--bus-health-url` | `http://localhost:5300/health` | Bus emulator `/health` URL the dashboard polls into `/api/status`. |
+
+`/api/status`'s `queue_depth` has no CLI knob of its own -- it is `max(0, forwarded_total -
+handled_total)`, DERIVED rather than queried, because the Service Bus emulator has no working
+admin/runtime-properties API for queue depth (spiked 2026-09-18: `ServiceBusAdministrationClient`
+targets a management HTTPS port the emulator never opens, and its `:5300` admin port's
+`MessageCount` field doesn't update on send). `forwarded_total` comes from the listener's
+`FORWARDED_REPORT_URL` (above); `handled_total` is the worker's `REPORT_URL`-fed completed+dead_lettered count
+(see Worker row above).
+
+`queue_depth.value` is withheld (`null`, `method: "unknown"`, page shows "unknown" with no "ok"
+styling) rather than shown with false confidence in two cases: the bus is down (`bus.ok` is
+`false` -- the listener spools instead of forwarding, so the derived total would silently stop
+growing); or `forwarded_total == 0` while `handled_total > 0`, meaning the listener evidently
+isn't reporting at all (`FORWARDED_REPORT_URL` unset, or a dashboard restart while pre-restart
+messages are still draining). See
+`hl7poc.dashboard.status.derive_queue_depth`'s docstring for the full accuracy caveats.
 
 ## Build constants
 
@@ -48,7 +65,7 @@ Fixed values carried over from the reference implementations, not exposed as env
 | Lock renewal max | 300s | Worker: `AutoLockRenewer`'s maximum lock renewal duration for a session. |
 | Probe read timeout | 3s | Both: timeout for a probe HTTP handler read; defined once as `hl7poc.probe.READ_TIMEOUT`. |
 | Webhook timeout | 5s | Worker: timeout for a webhook POST when `WEBHOOK_URL` is set. |
-| Report timeout | 2s | Worker: timeout for a handled-event POST when `REPORT_URL` is set; defined once as `hl7poc.worker.REPORT_TIMEOUT`. |
+| Report timeout | 2s | Worker: timeout for a handled-event POST when `REPORT_URL` is set; defined once as `hl7poc.worker.REPORT_TIMEOUT`. Listener: same value/purpose for its forwarded-event POST when `FORWARDED_REPORT_URL` is set, defined separately as `hl7poc.listener.REPORT_TIMEOUT`. |
 | Handled ring size | 50 | Dashboard: number of most-recent `/api/handled` events kept in memory (`hl7poc.dashboard.HANDLED_RING_SIZE`); older events roll off, only the running totals survive. |
 
 ## Local SimHospital demo and smoke test
