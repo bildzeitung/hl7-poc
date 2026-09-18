@@ -48,6 +48,36 @@ def spool_status(spool_dir: Path) -> dict[str, Any]:
         return {"ok": False, "error": str(err)}
 
 
+def derive_queue_depth(forwarded_total: int, handled_total: int) -> dict[str, Any]:
+    """Approximate hl7-events depth as forwarded-but-not-yet-handled.
+
+    There is no working way to read this from the Service Bus emulator
+    directly: ServiceBusAdministrationClient.get_queue_runtime_properties
+    builds its management endpoint on port 443 from the sb://<host>
+    connection string, and the emulator never opens that HTTPS listener at
+    all (connection refused); the emulator's own :5300 admin port serves an
+    Atom/XML QueueDescription feed instead, but its MessageCount field does
+    not update after a send (verified by hand against a running emulator --
+    see hl7-poc-285.2's bd design note), so it cannot be used either.
+
+    Instead this is derived from two independently-reported running totals:
+    the listener's forwarded-message count (POST /api/forwarded) minus the
+    worker's handled count (POST /api/handled, completed + dead_lettered).
+    Known accuracy limits: a listener or worker restart resets its own
+    counter independently of the other's, and the two POSTs can race by one
+    message in the brief window between a forward and its eventual handling
+    -- both make this an approximation, not an exact depth, which is why it
+    is always labelled "derived" rather than a queried value like bus/listener.
+    """
+    value = max(0, forwarded_total - handled_total)
+    return {
+        "value": value,
+        "method": "derived",
+        "forwarded_total": forwarded_total,
+        "handled_total": handled_total,
+    }
+
+
 def assemble_status(
     *, listener_ready_url: str, spool_dir: Path, bus_health_url: str
 ) -> dict[str, Any]:

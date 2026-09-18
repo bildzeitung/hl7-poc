@@ -4,7 +4,7 @@ from io import BytesIO
 from pathlib import Path
 from unittest.mock import patch
 
-from hl7poc.dashboard.status import assemble_status, spool_status
+from hl7poc.dashboard.status import assemble_status, derive_queue_depth, spool_status
 
 
 def _fake_response(body: dict) -> BytesIO:
@@ -131,3 +131,25 @@ def test_assemble_status_not_ready_503_keeps_flags(tmp_path: Path) -> None:
     assert result["listener"]["ok"] is False
     assert result["listener"]["fields"] == {"bus_up": False}
     assert "503" in result["listener"]["error"]
+
+
+# ---- derive_queue_depth --------------------------------------------------------
+
+
+def test_derive_queue_depth_subtracts_handled_from_forwarded() -> None:
+    result = derive_queue_depth(forwarded_total=10, handled_total=7)
+
+    assert result == {
+        "value": 3,
+        "method": "derived",
+        "forwarded_total": 10,
+        "handled_total": 7,
+    }
+
+
+def test_derive_queue_depth_never_goes_negative() -> None:
+    # handled_total can exceed forwarded_total after a listener restart
+    # resets its counter while the worker's keeps counting.
+    result = derive_queue_depth(forwarded_total=2, handled_total=5)
+
+    assert result["value"] == 0

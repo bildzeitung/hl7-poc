@@ -20,8 +20,10 @@ import os
 import signal
 import sys
 import time
+import urllib.request
 import uuid
 from collections.abc import Awaitable, Callable
+from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Annotated
@@ -59,6 +61,25 @@ MLLP_CLOSE_BUDGET = 8
 SENDER_CLOSE_BUDGET = 4
 
 ForwardFn = Callable[[CanonicalMessage, Path], Awaitable[None]]
+
+REPORT_TIMEOUT = (
+    2  # seconds; matches hl7poc.worker.REPORT_TIMEOUT -- see docs/configuration.md
+)
+# Own single thread so a slow dashboard queues reports here instead of
+# competing with the Service Bus send path for the default executor.
+_REPORT_EXECUTOR = ThreadPoolExecutor(max_workers=1, thread_name_prefix="report")
+
+
+def report(report_url: str) -> None:
+    """POST an empty forwarded-message event to the dashboard. Never raises."""
+    req = urllib.request.Request(
+        report_url, data=b"", headers={"Content-Type": "application/json"}
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=REPORT_TIMEOUT):
+            pass
+    except Exception as err:  # noqa: BLE001 - http.client errors are not all OSError
+        logger.warning("report to dashboard failed: %s", err)
 
 
 class ListenerState:
@@ -359,6 +380,7 @@ async def _forward(
     sender,
     send_lock: asyncio.Lock,
     state: ListenerState,
+    report_url: str | None = None,
 ) -> None:
     sb_message = build_service_bus_message(message)
     try:
@@ -366,6 +388,12 @@ async def _forward(
             await sender.send_messages(sb_message)
         state.sb_healthy = True
         file.unlink(missing_ok=True)
+        if report_url:
+            # Deliberately not awaited: forwarding is done, and the next
+            # message must not wait up to REPORT_TIMEOUT on a slow dashboard.
+            asyncio.get_running_loop().run_in_executor(
+                _REPORT_EXECUTOR, report, report_url
+            )
     except Exception as err:  # noqa: BLE001 - any send failure degrades readiness
         state.sb_healthy = False
         logger.error(
@@ -413,6 +441,7 @@ async def serve(
     servicebus_connection: str,
     servicebus_queue: str,
     spool_dir: Path,
+    report_url: str | None = None,
 ) -> None:
     spool_dir.mkdir(parents=True, exist_ok=True)
     rejected_dir = spool_dir / "rejected"
@@ -426,7 +455,11 @@ async def serve(
         sender = sb_client.get_queue_sender(servicebus_queue)
         send_lock = asyncio.Lock()
         forward = functools.partial(
-            _forward, sender=sender, send_lock=send_lock, state=state
+            _forward,
+            sender=sender,
+            send_lock=send_lock,
+            state=state,
+            report_url=report_url,
         )
 
         mllp_server = await asyncio.start_server(
@@ -496,6 +529,7 @@ def listen(
         str, typer.Option(envvar="SERVICEBUS_QUEUE")
     ] = "hl7-events",
     spool_dir: Annotated[Path, typer.Option(envvar="SPOOL_DIR")] = Path("./spool"),
+    report_url: Annotated[str | None, typer.Option(envvar="REPORT_URL")] = None,
 ) -> None:
     """Start the HL7 listener."""
     logging.basicConfig(level=logging.INFO)
@@ -506,6 +540,7 @@ def listen(
             servicebus_connection=servicebus_connection,
             servicebus_queue=servicebus_queue,
             spool_dir=spool_dir,
+            report_url=report_url,
         )
     )
 
