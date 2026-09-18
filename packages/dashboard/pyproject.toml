@@ -1,0 +1,22 @@
+[build-system]
+requires = ["uv_build>=0.8,<0.12"]
+build-backend = "uv_build"
+
+[project]
+name = "hl7poc-dashboard"
+version = "0.0.0"
+requires-python = ">=3.14"
+dependencies = [
+  "hl7poc-core",
+  "typer>=0.12",
+]
+
+[project.scripts]
+hl7dashboard = "hl7poc.dashboard:app"
+
+[tool.uv.sources]
+hl7poc-core = { workspace = true }
+
+[tool.uv.build-backend]
+module-name = "hl7poc.dashboard"
+namespace = true

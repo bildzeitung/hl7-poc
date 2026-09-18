@@ -9,6 +9,7 @@ resolution-markers = [
 [manifest]
 members = [
     "hl7poc-core",
+    "hl7poc-dashboard",
     "hl7poc-listener",
     "hl7poc-worker",
 ]
@@ -253,6 +254,21 @@ wheels = [
 name = "hl7poc-core"
 version = "0.0.0"
 source = { editable = "packages/core" }
+
+[[package]]
+name = "hl7poc-dashboard"
+version = "0.0.0"
+source = { editable = "packages/dashboard" }
+dependencies = [
+    { name = "hl7poc-core" },
+    { name = "typer" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "hl7poc-core", editable = "packages/core" },
+    { name = "typer", specifier = ">=0.12" },
+]
 
 [[package]]
 name = "hl7poc-listener"
