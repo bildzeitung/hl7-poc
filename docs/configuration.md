@@ -22,6 +22,16 @@ Typer `Annotated` option backed by an environment variable (see
 | `SERVICEBUS_QUEUE` | `--servicebus-queue` | `hl7-events` | Queue the worker pulls canonical model JSON from. |
 | `WEBHOOK_URL` | `--webhook-url` | none (prints to stdout instead) | Where the worker POSTs a notification payload; when unset, the worker prints the JSON payload. |
 | `HTTP_PORT` | `--http-port` | `8081` | Port for the `/live` probe endpoint (the worker has no `/ready` — it has no inbound traffic to gate on). |
+| `REPORT_URL` | `--report-url` | none (no reporting) | Full URL of the dashboard's `POST /api/handled` endpoint the worker fire-and-forgets a handled-message event to after each message (completed or dead-lettered); when unset, no HTTP call is made at all. |
+
+## Dashboard (`hl7dashboard`)
+
+| Env var | CLI option | Default | Meaning |
+|---|---|---|---|
+| `DASHBOARD_PORT` | `--port` | `8082` | Port the dashboard serves `/`, `/api/status` and `POST /api/handled` on. |
+| `LISTENER_READY_URL` | `--listener-ready-url` | `http://localhost:8080/ready` | Listener `/ready` URL the dashboard polls into `/api/status`. |
+| `SPOOL_DIR` | `--spool-dir` | `./spool` | Spool directory the dashboard counts `*.hl7` files in. |
+| `BUS_HEALTH_URL` | `--bus-health-url` | `http://localhost:5300/health` | Bus emulator `/health` URL the dashboard polls into `/api/status`. |
 
 ## Build constants
 
@@ -38,6 +48,8 @@ Fixed values carried over from the reference implementations, not exposed as env
 | Lock renewal max | 300s | Worker: `AutoLockRenewer`'s maximum lock renewal duration for a session. |
 | Probe read timeout | 3s | Both: timeout for a probe HTTP handler read; defined once as `hl7poc.probe.READ_TIMEOUT`. |
 | Webhook timeout | 5s | Worker: timeout for a webhook POST when `WEBHOOK_URL` is set. |
+| Report timeout | 2s | Worker: timeout for a handled-event POST when `REPORT_URL` is set; defined once as `hl7poc.worker.REPORT_TIMEOUT`. |
+| Handled ring size | 50 | Dashboard: number of most-recent `/api/handled` events kept in memory (`hl7poc.dashboard.HANDLED_RING_SIZE`); older events roll off, only the running totals survive. |
 
 ## Local SimHospital demo and smoke test
 

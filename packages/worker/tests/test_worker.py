@@ -15,7 +15,7 @@ from hl7poc.model import (
     Patient,
     Result,
 )
-from hl7poc.worker import _serve, decide, handle, push
+from hl7poc.worker import _serve, decide, handle, push, report
 
 
 def _model(
@@ -104,6 +104,33 @@ def test_push_with_no_webhook_prints_json_with_sent_at(capsys) -> None:
     body = json.loads(out.removeprefix("PUSH -> ").strip())
     assert body["mrn"] == "12345"
     assert "sent_at" in body
+
+
+# ---- report ------------------------------------------------------------------
+
+
+def test_report_posts_event(monkeypatch) -> None:
+    calls: list = []
+    monkeypatch.setattr(
+        "hl7poc.worker.urllib.request.urlopen",
+        lambda req, timeout=None: calls.append(req),
+    )
+    report({"mrn": "1", "outcome": "completed"}, "http://dashboard.example/api/handled")
+
+    assert len(calls) == 1
+    assert calls[0].full_url == "http://dashboard.example/api/handled"
+    assert json.loads(calls[0].data)["outcome"] == "completed"
+
+
+def test_report_swallows_failure(monkeypatch, caplog) -> None:
+    def _raising_urlopen(req, timeout=None):
+        raise OSError("dashboard down")
+
+    monkeypatch.setattr("hl7poc.worker.urllib.request.urlopen", _raising_urlopen)
+
+    report(
+        {"mrn": "1", "outcome": "completed"}, "http://dashboard.example/api/handled"
+    )  # must not raise
 
 
 # ---- handle --------------------------------------------------------------------
@@ -195,6 +222,78 @@ def test_handle_service_bus_error_on_complete_propagates() -> None:
 
     with pytest.raises(ServiceBusError):
         asyncio.run(handle(receiver, msg, ""))
+
+
+# ---- handle: reporting --------------------------------------------------------
+
+
+def test_handle_no_report_url_makes_no_http_call(monkeypatch) -> None:
+    calls: list = []
+    monkeypatch.setattr("hl7poc.worker.report", lambda *a, **kw: calls.append((a, kw)))
+    receiver = _StubReceiver()
+    model = _model("ADT", "A01")
+    msg = _StubMessage(model.to_json().encode())
+
+    asyncio.run(handle(receiver, msg, ""))  # report_url defaults to None
+
+    assert calls == []
+
+
+def test_handle_completed_reports_outcome_completed(monkeypatch) -> None:
+    calls: list = []
+    monkeypatch.setattr(
+        "hl7poc.worker.report", lambda event, url: calls.append((event, url))
+    )
+    receiver = _StubReceiver()
+    model = _model("SIU", "S12", appointment_start="20260920090000")
+    msg = _StubMessage(model.to_json().encode())
+
+    asyncio.run(handle(receiver, msg, "", "http://dashboard.example/api/handled"))
+
+    assert len(calls) == 1
+    event, url = calls[0]
+    assert url == "http://dashboard.example/api/handled"
+    assert event["outcome"] == "completed"
+    assert event["notified"] is True
+    assert event["mrn"] == "12345"
+    assert event["msg_type"] == "SIU^S12"
+
+
+def test_handle_dead_lettered_reports_outcome_dead_lettered(monkeypatch) -> None:
+    calls: list = []
+    monkeypatch.setattr(
+        "hl7poc.worker.report", lambda event, url: calls.append((event, url))
+    )
+    receiver = _StubReceiver()
+    msg = _StubMessage(b"not json")
+
+    asyncio.run(handle(receiver, msg, "", "http://dashboard.example/api/handled"))
+
+    assert len(calls) == 1
+    event, _ = calls[0]
+    assert event["outcome"] == "dead_lettered"
+    assert event["notified"] is False
+    assert event["mrn"] == "unknown"
+    assert event["msg_type"] == "unknown"
+
+
+def test_handle_report_failure_does_not_affect_settlement(monkeypatch) -> None:
+    # Reporting must never block or fail message handling.
+    monkeypatch.setattr(
+        "hl7poc.worker.report",
+        lambda *a, **kw: (_ for _ in ()).throw(RuntimeError("dashboard exploded")),
+    )
+    receiver = _StubReceiver()
+    model = _model("ADT", "A01")
+    msg = _StubMessage(model.to_json().encode())
+
+    with pytest.raises(RuntimeError):
+        # report() itself never raises in production; this only proves handle()
+        # doesn't add its own protection around a caller that already promises
+        # not to raise -- report() is what swallows real network failures.
+        asyncio.run(handle(receiver, msg, "", "http://dashboard.example/api/handled"))
+
+    assert receiver.completed == [msg]  # settlement already happened before reporting
 
 
 # ---- _serve lifecycle ---------------------------------------------------------
