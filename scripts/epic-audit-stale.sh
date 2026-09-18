@@ -28,7 +28,7 @@
 #            predates the stamp
 #
 # ISO-8601 UTC timestamps of this shape sort lexicographically in
-# chronological order, so a plain string `>` comparison in jq is exact --
+# chronological order, so a plain string `>=` comparison in jq is exact --
 # no date parsing needed.
 #
 # Read-only: bd show / bd list only, never a bd write.
