@@ -65,10 +65,11 @@ def derive_queue_depth(
     Instead this is derived from two independently-reported running totals:
     the listener's forwarded-message count (POST /api/forwarded) minus the
     worker's handled count (POST /api/handled, completed + dead_lettered).
-    Known accuracy limits: a listener or worker restart resets its own
-    counter independently of the other's, and the two POSTs can race by one
-    message in the brief window between a forward and its eventual handling
-    -- both make this an approximation, not an exact depth, which is why it
+    Known accuracy limits: both totals live only in this dashboard process,
+    so a dashboard restart zeroes both while messages forwarded before it may
+    still be handled after it (undercounting depth); a report the listener or
+    worker fails to deliver is simply lost; and the two POSTs can race by one
+    message -- all make this an approximation, not an exact depth, which is why it
     is always labelled "derived" rather than a queried value like bus/listener.
 
     The estimate is withheld (value=None, method="unknown") rather than shown
@@ -76,32 +77,19 @@ def derive_queue_depth(
     listener spools instead of forwarding, so the derived total silently stops
     growing and would show a stale/misleadingly-shrinking number; or
     forwarded_total is 0 while handled_total > 0, which means the listener
-    evidently isn't reporting (FORWARDED_REPORT_URL unset, or a restart) and
+    evidently isn't reporting (FORWARDED_REPORT_URL unset, or a dashboard
+    restart with pre-restart messages still draining) and
     any subtraction against it is meaningless, not just imprecise.
     """
+    totals = {"forwarded_total": forwarded_total, "handled_total": handled_total}
     if not bus_ok:
-        return {
-            "value": None,
-            "method": "unknown",
-            "reason": "bus down",
-            "forwarded_total": forwarded_total,
-            "handled_total": handled_total,
-        }
-    if forwarded_total == 0 and handled_total > 0:
-        return {
-            "value": None,
-            "method": "unknown",
-            "reason": "listener not reporting",
-            "forwarded_total": forwarded_total,
-            "handled_total": handled_total,
-        }
-    value = max(0, forwarded_total - handled_total)
-    return {
-        "value": value,
-        "method": "derived",
-        "forwarded_total": forwarded_total,
-        "handled_total": handled_total,
-    }
+        reason = "bus down"
+    elif forwarded_total == 0 and handled_total > 0:
+        reason = "listener not reporting"
+    else:
+        value = max(0, forwarded_total - handled_total)
+        return {"value": value, "method": "derived", **totals}
+    return {"value": None, "method": "unknown", "reason": reason, **totals}
 
 
 def assemble_status(

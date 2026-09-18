@@ -46,7 +46,8 @@ targets a management HTTPS port the emulator never opens, and its `:5300` admin 
 styling) rather than shown with false confidence in two cases: the bus is down (`bus.ok` is
 `false` -- the listener spools instead of forwarding, so the derived total would silently stop
 growing); or `forwarded_total == 0` while `handled_total > 0`, meaning the listener evidently
-isn't reporting at all (`FORWARDED_REPORT_URL` unset, or a restart). See
+isn't reporting at all (`FORWARDED_REPORT_URL` unset, or a dashboard restart while pre-restart
+messages are still draining). See
 `hl7poc.dashboard.status.derive_queue_depth`'s docstring for the full accuracy caveats.
 
 ## Build constants
