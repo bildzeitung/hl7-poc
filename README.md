@@ -60,7 +60,7 @@ Use three terminals to show each piece live:
 2. **Readiness:** `curl -s localhost:8080/ready` shows `mllp_listening: true`, and
    `sb_healthy: false` since no bus is running.
 3. **Simulator:** `PATHWAYS_PER_HOUR=3600 docker compose up simhospital`. Its log shows
-   `Sending message` lines. The dashboard is at http://localhost:8000.
+   `Sending message` lines. The dashboard is at http://localhost:8000/simulated-hospital/.
 4. **Arrivals:** `watch -n2 'ls /tmp/demo-spool | wc -l'` shows the count rising.
    To view a message, run `tr '\r' '\n' < "$(ls /tmp/demo-spool/*.hl7 | head -1)"`.
    `/tmp/demo-spool/rejected/` stays absent or empty.
@@ -114,7 +114,7 @@ for checks.
    ```
 
 4. **Simulator (terminal 4):** `PATHWAYS_PER_HOUR=3600 docker compose up simhospital`.
-   Its log shows `Sending message` lines. The dashboard is at http://localhost:8000.
+   Its log shows `Sending message` lines. The dashboard is at http://localhost:8000/simulated-hospital/.
 5. **Forwarding (terminal 5):** `curl -s localhost:8080/ready` shows
    `mllp_listening: true` and `sb_healthy: true`. `watch -n2 'ls /tmp/demo-spool | wc -l'`
    stays near zero, because files leave the spool as soon as they are forwarded.
