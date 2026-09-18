@@ -27,6 +27,14 @@ def _fetch_status(url: str) -> dict[str, Any]:
     """Fetch a JSON status endpoint, reporting failure rather than raising."""
     try:
         return {"ok": True, "fields": _fetch_json(url)}
+    except urllib.error.HTTPError as err:
+        # /ready answers 503 with its flags in the body -- the not-ready case is
+        # exactly when those flags matter, so keep them rather than just the code.
+        try:
+            fields = json.loads(err.read())
+        except ValueError, OSError:
+            return {"ok": False, "error": str(err)}
+        return {"ok": False, "error": str(err), "fields": fields}
     except (urllib.error.URLError, TimeoutError, ValueError, OSError) as err:
         return {"ok": False, "error": str(err)}
 

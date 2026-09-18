@@ -109,3 +109,25 @@ def test_assemble_status_all_sources_down(tmp_path: Path) -> None:
     assert result["bus"]["ok"] is False
     # A missing (never-created) spool dir globs to zero, not an error.
     assert result["spool"] == {"ok": True, "count": 0}
+
+
+def test_assemble_status_not_ready_503_keeps_flags(tmp_path: Path) -> None:
+    def fake_urlopen(url, timeout=None):
+        if "8080" in url:
+            raise urllib.error.HTTPError(
+                url, 503, "Service Unavailable", {}, _fake_response({"bus_up": False})
+            )
+        return _fake_response({"status": "healthy"})
+
+    with patch(
+        "hl7poc.dashboard.status.urllib.request.urlopen", side_effect=fake_urlopen
+    ):
+        result = assemble_status(
+            listener_ready_url="http://localhost:8080/ready",
+            spool_dir=tmp_path,
+            bus_health_url="http://localhost:5300/health",
+        )
+
+    assert result["listener"]["ok"] is False
+    assert result["listener"]["fields"] == {"bus_up": False}
+    assert "503" in result["listener"]["error"]

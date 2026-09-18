@@ -69,11 +69,11 @@ async function poll() {
   try {
     const resp = await fetch("/api/status");
     const data = await resp.json();
-    setRow("listener", data.listener.ok, data.listener.ok
+    setRow("listener", data.listener.ok, data.listener.fields
       ? JSON.stringify(data.listener.fields) : data.listener.error);
     setRow("spool", data.spool.ok, data.spool.ok
       ? String(data.spool.count) : data.spool.error);
-    setRow("bus", data.bus.ok, data.bus.ok
+    setRow("bus", data.bus.ok, data.bus.fields
       ? JSON.stringify(data.bus.fields) : data.bus.error);
     document.getElementById("updated").textContent =
       "updated " + new Date().toLocaleTimeString();
