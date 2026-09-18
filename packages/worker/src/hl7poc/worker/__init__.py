@@ -37,6 +37,7 @@ app = typer.Typer(add_completion=False)
 logger = logging.getLogger(__name__)
 
 REPORT_TIMEOUT = 2  # seconds; see docs/configuration.md's "Report timeout" row
+SESSION_IDLE_WAIT = 1  # seconds; see docs/configuration.md's "Session idle wait" row
 # Own single thread so a slow dashboard queues reports here instead of starving
 # the default executor that the awaited webhook push runs on.
 _REPORT_EXECUTOR = ThreadPoolExecutor(max_workers=1, thread_name_prefix="report")
@@ -157,7 +158,7 @@ async def pump(
             receiver = client.get_queue_receiver(
                 queue,
                 session_id=NEXT_AVAILABLE_SESSION,  # grab any patient with backlog
-                max_wait_time=5,  # drop session after 5s idle
+                max_wait_time=SESSION_IDLE_WAIT,
             )
             async with receiver:
                 renewer.register(
