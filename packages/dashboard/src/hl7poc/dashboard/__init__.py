@@ -32,6 +32,9 @@ app = typer.Typer(add_completion=False)
 logger = logging.getLogger(__name__)
 
 HANDLED_RING_SIZE = 50  # last-N events kept in memory; see docs/configuration.md
+MAX_HANDLED_BODY = 64 * 1024  # bytes; bounds what one POST can pin in the ring
+_OUTCOMES = frozenset({"completed", "dead_lettered"})
+_EVENT_FIELDS = ("mrn", "session_id", "msg_type", "outcome", "notified", "reported_at")
 
 INDEX_HTML = b"""<!doctype html>
 <html lang="en">
@@ -58,6 +61,10 @@ INDEX_HTML = b"""<!doctype html>
   <tr><td>Bus /health</td><td id="bus-state">unknown</td><td id="bus-detail"></td></tr>
   <tr><td>Handled (completed / dead-lettered)</td><td id="handled-state">unknown</td><td id="handled-detail"></td></tr>
 </table>
+<h2>Last handled</h2>
+<table id="handled-events">
+  <tr><th>Reported at</th><th>MRN</th><th>Type</th><th>Outcome</th><th>Notified</th></tr>
+</table>
 <p id="updated"></p>
 <script>
 function setRow(key, ok, detail) {
@@ -78,11 +85,20 @@ async function poll() {
       ? String(data.spool.count) : data.spool.error);
     setRow("bus", data.bus.ok, data.bus.fields
       ? JSON.stringify(data.bus.fields) : data.bus.error);
-    document.getElementById("handled-state").textContent =
+    const handledState = document.getElementById("handled-state");
+    handledState.textContent =
       data.handled.completed + " / " + data.handled.dead_lettered;
-    document.getElementById("handled-state").className = "ok";
+    handledState.className = "ok";
     document.getElementById("handled-detail").textContent =
       "total " + data.handled.total;
+    const events = document.getElementById("handled-events");
+    while (events.rows.length > 1) events.deleteRow(1);
+    for (const e of data.handled.events.slice().reverse()) {
+      const row = events.insertRow();
+      for (const v of [e.reported_at, e.mrn, e.msg_type, e.outcome, e.notified]) {
+        row.insertCell().textContent = String(v);
+      }
+    }
     document.getElementById("updated").textContent =
       "updated " + new Date().toLocaleTimeString();
   } catch (err) {
@@ -104,7 +120,9 @@ def _parse_handled_event(raw: bytes) -> dict[str, Any] | None:
         event = json.loads(raw)
     except ValueError:
         return None
-    return event if isinstance(event, dict) and "outcome" in event else None
+    if not isinstance(event, dict) or event.get("outcome") not in _OUTCOMES:
+        return None
+    return {k: event.get(k) for k in _EVENT_FIELDS}
 
 
 async def handle_http(
@@ -132,13 +150,18 @@ async def handle_http(
                 break
             name, _, value = header_line.partition(b":")
             if name.strip().lower() == b"content-length":
-                content_length = int(value.strip())
+                try:
+                    content_length = int(value.strip())
+                except ValueError:
+                    content_length = -1
 
         if method == "POST" and path == "/api/handled":
-            raw_body = await asyncio.wait_for(
-                reader.readexactly(content_length), timeout=READ_TIMEOUT
-            )
-            event = _parse_handled_event(raw_body)
+            event = None
+            if 0 <= content_length <= MAX_HANDLED_BODY:
+                raw_body = await asyncio.wait_for(
+                    reader.readexactly(content_length), timeout=READ_TIMEOUT
+                )
+                event = _parse_handled_event(raw_body)
             if event is None:
                 status, content_type, body = "400 Bad Request", "text/plain", b""
             else:

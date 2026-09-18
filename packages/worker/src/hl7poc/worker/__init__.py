@@ -20,8 +20,8 @@ import json
 import logging
 import signal
 import sys
-import urllib.error
 import urllib.request
+from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
 from typing import Annotated
 
@@ -37,6 +37,9 @@ app = typer.Typer(add_completion=False)
 logger = logging.getLogger(__name__)
 
 REPORT_TIMEOUT = 2  # seconds; see docs/configuration.md's "Report timeout" row
+# Own single thread so a slow dashboard queues reports here instead of starving
+# the default executor that the awaited webhook push runs on.
+_REPORT_EXECUTOR = ThreadPoolExecutor(max_workers=1, thread_name_prefix="report")
 
 _SIU_TITLES = {
     "S12": "Appointment booked",
@@ -85,15 +88,16 @@ def report(event: dict, report_url: str) -> None:
         report_url, data=body, headers={"Content-Type": "application/json"}
     )
     try:
-        urllib.request.urlopen(req, timeout=REPORT_TIMEOUT)
-    except (urllib.error.URLError, OSError, ValueError) as err:
+        with urllib.request.urlopen(req, timeout=REPORT_TIMEOUT):
+            pass
+    except Exception as err:  # noqa: BLE001 - http.client errors are not all OSError
         logger.warning("report to dashboard failed: %s", err)
 
 
 def _report_event(
     model: CanonicalMessage | None, msg, outcome: str, *, notified: bool
 ) -> dict:
-    mrn = model.patient.mrn or "unknown" if model else "unknown"
+    mrn = (model.patient.mrn or "unknown") if model else "unknown"
     msg_type = f"{model.header.msg_type}^{model.header.event}" if model else "unknown"
     return {
         "mrn": mrn,
@@ -133,10 +137,10 @@ async def handle(
         )
     if report_url:
         event = _report_event(model, msg, outcome, notified=notified)
-        # Off the event loop, same as push -- reporting must never slow message
-        # handling, and a swallowed failure here must not affect settlement above.
-        await asyncio.get_running_loop().run_in_executor(
-            None, report, event, report_url
+        # Deliberately not awaited: settlement is done, and the next message must
+        # not wait up to REPORT_TIMEOUT on a slow or blackholed dashboard.
+        asyncio.get_running_loop().run_in_executor(
+            _REPORT_EXECUTOR, report, event, report_url
         )
 
 

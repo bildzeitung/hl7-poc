@@ -15,7 +15,7 @@ from hl7poc.model import (
     Patient,
     Result,
 )
-from hl7poc.worker import _serve, decide, handle, push, report
+from hl7poc.worker import _REPORT_EXECUTOR, _serve, decide, handle, push, report
 
 
 def _model(
@@ -122,7 +122,7 @@ def test_report_posts_event(monkeypatch) -> None:
     assert json.loads(calls[0].data)["outcome"] == "completed"
 
 
-def test_report_swallows_failure(monkeypatch, caplog) -> None:
+def test_report_swallows_failure(monkeypatch) -> None:
     def _raising_urlopen(req, timeout=None):
         raise OSError("dashboard down")
 
@@ -249,6 +249,7 @@ def test_handle_completed_reports_outcome_completed(monkeypatch) -> None:
     msg = _StubMessage(model.to_json().encode())
 
     asyncio.run(handle(receiver, msg, "", "http://dashboard.example/api/handled"))
+    _REPORT_EXECUTOR.submit(lambda: None).result()  # drain the FIFO report thread
 
     assert len(calls) == 1
     event, url = calls[0]
@@ -268,6 +269,7 @@ def test_handle_dead_lettered_reports_outcome_dead_lettered(monkeypatch) -> None
     msg = _StubMessage(b"not json")
 
     asyncio.run(handle(receiver, msg, "", "http://dashboard.example/api/handled"))
+    _REPORT_EXECUTOR.submit(lambda: None).result()  # drain the FIFO report thread
 
     assert len(calls) == 1
     event, _ = calls[0]
@@ -277,23 +279,38 @@ def test_handle_dead_lettered_reports_outcome_dead_lettered(monkeypatch) -> None
     assert event["msg_type"] == "unknown"
 
 
-def test_handle_report_failure_does_not_affect_settlement(monkeypatch) -> None:
-    # Reporting must never block or fail message handling.
-    monkeypatch.setattr(
-        "hl7poc.worker.report",
-        lambda *a, **kw: (_ for _ in ()).throw(RuntimeError("dashboard exploded")),
-    )
+def test_handle_with_dashboard_down_still_completes(monkeypatch) -> None:
+    def _raising_urlopen(req, timeout=None):
+        raise OSError("dashboard down")
+
+    monkeypatch.setattr("hl7poc.worker.urllib.request.urlopen", _raising_urlopen)
     receiver = _StubReceiver()
     model = _model("ADT", "A01")
     msg = _StubMessage(model.to_json().encode())
 
-    with pytest.raises(RuntimeError):
-        # report() itself never raises in production; this only proves handle()
-        # doesn't add its own protection around a caller that already promises
-        # not to raise -- report() is what swallows real network failures.
-        asyncio.run(handle(receiver, msg, "", "http://dashboard.example/api/handled"))
+    asyncio.run(handle(receiver, msg, "", "http://dashboard.example/api/handled"))
 
-    assert receiver.completed == [msg]  # settlement already happened before reporting
+    assert receiver.completed == [msg]
+
+
+def test_handle_does_not_wait_for_report(monkeypatch) -> None:
+    import threading
+
+    release = threading.Event()
+    monkeypatch.setattr("hl7poc.worker.report", lambda *a: release.wait(5))
+    receiver = _StubReceiver()
+    model = _model("ADT", "A01")
+    msg = _StubMessage(model.to_json().encode())
+
+    async def _run() -> None:
+        await asyncio.wait_for(
+            handle(receiver, msg, "", "http://dashboard.example/api/handled"), 1
+        )
+        release.set()
+
+    asyncio.run(_run())
+
+    assert receiver.completed == [msg]
 
 
 # ---- _serve lifecycle ---------------------------------------------------------

@@ -134,3 +134,26 @@ def test_api_status_includes_handled_snapshot(tmp_path: Path) -> None:
     body = writer.written.split(b"\r\n\r\n", 1)[1]
     fields = json.loads(body)
     assert fields["handled"]["completed"] == 1
+
+
+def test_post_handled_unknown_outcome_returns_400(tmp_path: Path) -> None:
+    store = HandledStore(10)
+    body = json.dumps({"outcome": "exploded"}).encode()
+
+    writer = _serve(_post_request(body), spool_dir=tmp_path, handled_store=store)
+
+    assert writer.written.startswith(b"HTTP/1.1 400 Bad Request")
+    assert store.snapshot()["total"] == 0
+
+
+def test_post_handled_oversized_or_bad_content_length_returns_400(
+    tmp_path: Path,
+) -> None:
+    store = HandledStore(10)
+    for header in (b"Content-Length: 99999999\r\n", b"Content-Length: nope\r\n"):
+        reader = _FakeReader([b"POST /api/handled HTTP/1.1\r\n", header, b"\r\n"])
+
+        writer = _serve(reader, spool_dir=tmp_path, handled_store=store)
+
+        assert writer.written.startswith(b"HTTP/1.1 400 Bad Request")
+    assert store.snapshot()["total"] == 0
