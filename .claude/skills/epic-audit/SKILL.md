@@ -45,13 +45,31 @@ An epic is **auditable** when ALL hold:
 
 - `issue_type == "epic"` and `status != "closed"` — I never re-open or audit a closed epic;
 - it has **≥1** `parent-child` child, and **every** such child is `closed`;
-- it is **not** already labeled **`epic-audited`** (idempotency — no duplicate gaps).
+- it is **not** already labeled **`epic-audited`**, OR it is, but that stamp has gone **stale**
+  (hl7-poc-2bo): it has a parent-child child whose `created_at` is at or after the `audited_at`
+  metadata I stamped at the last audit (step 5). `scripts/epic-audit-stale.sh <epic-id>` is the
+  shared derivation — same script `epic-completion-check.sh` uses for `/land`'s re-arm signal, so
+  the two never drift. Idempotency for the non-stale case is unchanged: a genuinely-audited epic is
+  never re-picked.
 
 ```bash
-# Fast path — epics /land flagged:
+# Fast path — epics /land flagged (this now includes re-armed, previously-audited epics: /land's
+# epic-completion-check.sh only sets epic-ready-to-audit on a stale epic-audited epic, never on a
+# current one):
 bd list --type=epic --label epic-ready-to-audit --status open --limit 0 --json
-# Safety net — any open epic whose children are all closed but which was never flagged:
-bd list --type=epic --status open --exclude-label epic-audited --limit 0 --json
+# Safety net — every open epic, including epic-audited ones (staleness is checked per-candidate
+# below, not by excluding the label here -- excluding it would hide exactly the re-armed epics
+# this ticket exists to catch):
+bd list --type=epic --status open --limit 0 --json
+```
+
+For each safety-net candidate, skip it unless `scripts/epic-audit-stale.sh <epic-id>` prints `true`
+**or** the epic carries no `epic-audited` label at all:
+
+```bash
+if bd show <epic> --json | jq -e '(.[0].labels // []) | index("epic-audited")' >/dev/null; then
+  [ "$(scripts/epic-audit-stale.sh <epic>)" = "true" ] || continue   # current audit still holds
+fi
 ```
 
 **`--limit 0` on both is load-bearing, not noise.** Without it the query silently truncates at the
@@ -110,6 +128,18 @@ valid, common outcome.
 
 ## 5. Disposition — file, escalate, or nothing
 
+**First, before filing anything, stamp the audit time:**
+
+```bash
+bd update <epic> --set-metadata audited_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+```
+
+**Stamp BEFORE filing (decided by a human, hl7-poc-2bo).** Every gap/escalation ticket filed below
+is a parent-child child of this epic, so its `created_at` is at or after the stamp and marks the
+audit stale (`scripts/epic-audit-stale.sh` compares with `>=`, so a gap filed in the same second
+still counts). Once those gaps close, the epic re-arms and a follow-up audit verifies they were
+delivered. This converges: each re-audit files only new gaps, and a clean re-audit files none.
+
 ### Actionable gap → file a child ticket (flows into `/code`)
 
 When the fix is *clear enough to hand a builder* — a good bug report: what's missing, why, and what
@@ -152,7 +182,8 @@ I file nothing, but still mark the epic reviewed so it isn't swept again.
 
 ## 6. Mark the epic reviewed and publish
 
-However the review came out, retire the work signal and stamp the epic:
+However the review came out, retire the work signal and label the epic (`audited_at` was already
+stamped at the start of step 5):
 
 ```bash
 bd label add <epic> epic-audited
@@ -160,17 +191,20 @@ bd label remove <epic> epic-ready-to-audit   # no-op if it wasn't set
 scripts/bd-dolt-push.sh
 ```
 
-`epic-audited` is terminal for me: an audited epic is out of my sweep for good. Re-auditing after
-the filed gaps are themselves built is a fresh, explicit `/epic-audit <epic>` — I don't re-arm
-automatically. The epic itself stays **open**; closing it is the human's call once the audit's gaps
-are resolved.
+`epic-audited` is not terminal: an audited epic is out of my sweep **until** it has a parent-child
+child created at or after `audited_at` — my own gap tickets or any later-added child. When that
+child closes, `/land` re-flags the epic `epic-ready-to-audit` and the safety net above picks it up.
+An epic-audited epic with no `audited_at` (audited before this mechanism existed) never re-arms on
+its own; re-auditing it is an explicit `/epic-audit <epic>`. The epic itself stays **open**; closing
+it is the human's call once the audit's gaps are resolved.
 
 ## What I never do
 
 - **Close an epic or a child, merge, or write the default branch.** I file and escalate.
 - **Auto-file a judgment call.** Ambiguous → `human`-labeled `decision` ticket, never speculative
   work.
-- **Re-audit an `epic-audited` epic** in a sweep, or file duplicate gaps.
+- **Re-audit a still-current `epic-audited` epic** (its stamp not stale per
+  `scripts/epic-audit-stale.sh`) in a sweep, or file duplicate gaps.
 - **Commit or `bd import` the passive `.beads/*.jsonl`** in place of the push script.
 - **Record a design decision in a tracker note** instead of `docs/` — that forks the record. A gap
   that is really a design question is an escalation, and its resolution lands in `docs/`.

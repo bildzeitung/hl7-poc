@@ -228,12 +228,83 @@ def test_already_flagged_ready_is_not_reflagged(tmp_path: Path) -> None:
 
 
 def test_already_audited_epic_is_not_reflagged(tmp_path: Path) -> None:
-    """An epic already carrying epic-audited is left alone."""
+    """An epic already carrying epic-audited, with no audited_at metadata at
+    all (never audited via this mechanism, or -- equivalently for staleness
+    purposes -- no parent-child child postdates the stamp) is left alone."""
     show_fixtures = {
         "proj-child": [{"id": "proj-child", "parent": "proj-epic"}],
         "proj-epic": _epic(labels=["epic-audited"]),
     }
     list_fixtures = {"proj-epic": [{"id": "proj-child", "status": "closed"}]}
+    result = _run(
+        "proj-child",
+        tmp_path,
+        show_fixtures=show_fixtures,
+        list_fixtures=list_fixtures,
+    )
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == ""
+
+
+def test_audited_epic_with_stale_stamp_is_reflagged(tmp_path: Path) -> None:
+    """hl7-poc-2bo: an epic-audited epic that gained a parent-child child
+    AFTER its audited_at stamp must re-arm -- closing that child (or any
+    other, since the check re-derives child-completion fresh) fires READY
+    again so /epic-audit reviews the epic a second time."""
+    show_fixtures = {
+        "proj-child": [{"id": "proj-child", "parent": "proj-epic"}],
+        "proj-epic": [
+            {
+                **_epic(labels=["epic-audited"])[0],
+                "metadata": {"audited_at": "2026-09-15T00:00:00Z"},
+            }
+        ],
+    }
+    list_fixtures = {
+        "proj-epic": [
+            {
+                "id": "proj-child",
+                "status": "closed",
+                "created_at": "2026-09-10T00:00:00Z",
+            },
+            {
+                "id": "proj-new-child",
+                "status": "closed",
+                "created_at": "2026-09-18T00:00:00Z",
+            },
+        ]
+    }
+    result = _run(
+        "proj-child",
+        tmp_path,
+        show_fixtures=show_fixtures,
+        list_fixtures=list_fixtures,
+    )
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == "READY proj-epic"
+
+
+def test_audited_epic_with_current_stamp_is_not_reflagged(tmp_path: Path) -> None:
+    """An epic-audited epic whose parent-child children ALL predate
+    audited_at is still terminal -- no re-arm."""
+    show_fixtures = {
+        "proj-child": [{"id": "proj-child", "parent": "proj-epic"}],
+        "proj-epic": [
+            {
+                **_epic(labels=["epic-audited"])[0],
+                "metadata": {"audited_at": "2026-09-15T00:00:00Z"},
+            }
+        ],
+    }
+    list_fixtures = {
+        "proj-epic": [
+            {
+                "id": "proj-child",
+                "status": "closed",
+                "created_at": "2026-09-10T00:00:00Z",
+            },
+        ]
+    }
     result = _run(
         "proj-child",
         tmp_path,
