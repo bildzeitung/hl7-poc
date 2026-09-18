@@ -200,7 +200,7 @@ async def process_frame(
     `in_flight`, if given, records the spool file for the duration of this
     direct forward so a concurrent drain_spool() pass (retry_loop, every 5s)
     skips it instead of sending the same frame a second time -- see
-    docs/decisions.md. The file is added before the task is scheduled (no
+    docs/configuration.md. The file is added before the task is scheduled (no
     `await` sits between the spool write above and here, so there is no
     window where the file is spooled but not yet marked in-flight) and
     removed once the forward settles, success or failure.
@@ -306,11 +306,9 @@ async def drain_spool(
 
     `in_flight`, if given, names spool files a concurrent direct-forward task
     (process_frame -> _forward) currently owns; those are skipped rather than
-    forwarded a second time here. Service Bus's own duplicate detection
-    (RequiresDuplicateDetection, keyed on message_id = MSH-10 control id) is
-    not enough on its own: an empty control id falls back to a fresh random
-    uuid per send (build_service_bus_message), so two independent sends of
-    the same file would not be deduped -- see docs/decisions.md.
+    forwarded a second time here. Broker duplicate detection alone is not
+    enough (a frame with no MSH-10 gets a fresh message id per send) -- see
+    docs/configuration.md.
     """
     for file in sorted(spool_dir.glob("*.hl7")):
         if in_flight is not None and file in in_flight:
@@ -348,11 +346,7 @@ async def _final_drain(
 
     A forward cancelled mid-send loses nothing (the spool file is unlinked
     only after a successful send), but letting it finish first avoids
-    re-sending work that was about to complete. Awaiting `tasks` here also
-    means every entry has already cleared itself out of `in_flight` (the
-    task's done-callback) by the time drain_spool runs, so the in-flight
-    check below is not what protects this pass -- it is defense in depth for
-    a task that settles between the gather and the glob.
+    re-sending work that was about to complete.
     """
     await asyncio.gather(*tasks, return_exceptions=True)
     await drain_spool(spool_dir, rejected_dir, forward, in_flight)

@@ -304,16 +304,15 @@ def test_drain_spool_skips_file_a_direct_forward_currently_owns(tmp_path) -> Non
     (spool_dir / "1-free.hl7").write_bytes(ADT_A01.encode())
     in_flight = {owned}
 
-    drained: list[CanonicalMessage] = []
+    drained: list[str] = []
 
     async def record(message, file) -> None:
-        drained.append(message)
+        drained.append(file.name)
 
     asyncio.run(drain_spool(spool_dir, rejected_dir, record, in_flight))
 
-    assert [f.name for f in [owned]] == ["0-owned.hl7"]
-    assert owned.exists()  # never touched by the drain -- the direct forward owns it
-    assert len(drained) == 1
+    assert drained == ["1-free.hl7"]
+    assert owned.exists()
 
 
 def test_process_frame_marks_file_in_flight_until_forward_settles(tmp_path) -> None:
