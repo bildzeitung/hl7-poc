@@ -13,7 +13,7 @@ Typer `Annotated` option backed by an environment variable (see
 | `SERVICEBUS_CONNECTION` | `--servicebus-connection` | none (required) | Connection string for the Service Bus namespace (or emulator) the listener forwards to. |
 | `SERVICEBUS_QUEUE` | `--servicebus-queue` | `hl7-events` | Queue the listener forwards canonical model JSON to. |
 | `SPOOL_DIR` | `--spool-dir` | `./spool` locally, `/spool` in the container image | Directory raw HL7 frames are durably spooled to before forwarding. |
-| `REPORT_URL` | `--report-url` | none (no reporting) | Full URL of the dashboard's `POST /api/forwarded` endpoint the listener fire-and-forgets an empty event to after each successful forward; when unset, no HTTP call is made at all. Feeds the dashboard's derived queue-depth estimate (see Dashboard row below). |
+| `FORWARDED_REPORT_URL` | `--report-url` | none (no reporting) | Full URL of the dashboard's `POST /api/forwarded` endpoint the listener fire-and-forgets an empty event to after each successful forward; when unset, no HTTP call is made at all. Feeds the dashboard's derived queue-depth estimate (see Dashboard row below). Deliberately NOT named `REPORT_URL`: that is the worker's `/api/handled` knob, and one shared exported value would silently count handled events as forwarded. |
 
 ## Worker (`hl7worker`)
 
@@ -39,7 +39,7 @@ handled_total)`, DERIVED rather than queried, because the Service Bus emulator h
 admin/runtime-properties API for queue depth (spiked 2026-09-18: `ServiceBusAdministrationClient`
 targets a management HTTPS port the emulator never opens, and its `:5300` admin port's
 `MessageCount` field doesn't update on send). `forwarded_total` comes from the listener's
-`REPORT_URL` (above); `handled_total` is the worker's `REPORT_URL`-fed completed+dead_lettered count
+`FORWARDED_REPORT_URL` (above); `handled_total` is the worker's `REPORT_URL`-fed completed+dead_lettered count
 (see Worker row above). See `hl7poc.dashboard.status.derive_queue_depth`'s docstring for the full
 accuracy caveats.
 
@@ -58,7 +58,7 @@ Fixed values carried over from the reference implementations, not exposed as env
 | Lock renewal max | 300s | Worker: `AutoLockRenewer`'s maximum lock renewal duration for a session. |
 | Probe read timeout | 3s | Both: timeout for a probe HTTP handler read; defined once as `hl7poc.probe.READ_TIMEOUT`. |
 | Webhook timeout | 5s | Worker: timeout for a webhook POST when `WEBHOOK_URL` is set. |
-| Report timeout | 2s | Worker: timeout for a handled-event POST when `REPORT_URL` is set; defined once as `hl7poc.worker.REPORT_TIMEOUT`. Listener: same value/purpose for its forwarded-event POST, defined separately as `hl7poc.listener.REPORT_TIMEOUT`. |
+| Report timeout | 2s | Worker: timeout for a handled-event POST when `REPORT_URL` is set; defined once as `hl7poc.worker.REPORT_TIMEOUT`. Listener: same value/purpose for its forwarded-event POST when `FORWARDED_REPORT_URL` is set, defined separately as `hl7poc.listener.REPORT_TIMEOUT`. |
 | Handled ring size | 50 | Dashboard: number of most-recent `/api/handled` events kept in memory (`hl7poc.dashboard.HANDLED_RING_SIZE`); older events roll off, only the running totals survive. |
 
 ## Local SimHospital demo and smoke test

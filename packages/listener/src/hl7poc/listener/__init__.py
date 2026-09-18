@@ -62,9 +62,8 @@ SENDER_CLOSE_BUDGET = 4
 
 ForwardFn = Callable[[CanonicalMessage, Path], Awaitable[None]]
 
-REPORT_TIMEOUT = (
-    2  # seconds; matches hl7poc.worker.REPORT_TIMEOUT -- see docs/configuration.md
-)
+# seconds; matches hl7poc.worker.REPORT_TIMEOUT -- see docs/configuration.md
+REPORT_TIMEOUT = 2
 # Own single thread so a slow dashboard queues reports here instead of
 # competing with the Service Bus send path for the default executor.
 _REPORT_EXECUTOR = ThreadPoolExecutor(max_workers=1, thread_name_prefix="report")
@@ -72,9 +71,7 @@ _REPORT_EXECUTOR = ThreadPoolExecutor(max_workers=1, thread_name_prefix="report"
 
 def report(report_url: str) -> None:
     """POST an empty forwarded-message event to the dashboard. Never raises."""
-    req = urllib.request.Request(
-        report_url, data=b"", headers={"Content-Type": "application/json"}
-    )
+    req = urllib.request.Request(report_url, data=b"")
     try:
         with urllib.request.urlopen(req, timeout=REPORT_TIMEOUT):
             pass
@@ -529,7 +526,9 @@ def listen(
         str, typer.Option(envvar="SERVICEBUS_QUEUE")
     ] = "hl7-events",
     spool_dir: Annotated[Path, typer.Option(envvar="SPOOL_DIR")] = Path("./spool"),
-    report_url: Annotated[str | None, typer.Option(envvar="REPORT_URL")] = None,
+    report_url: Annotated[
+        str | None, typer.Option(envvar="FORWARDED_REPORT_URL")
+    ] = None,
 ) -> None:
     """Start the HL7 listener."""
     logging.basicConfig(level=logging.INFO)
